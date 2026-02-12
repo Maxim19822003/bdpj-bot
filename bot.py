@@ -1,6 +1,4 @@
-
-# Исправленный код без лишней строки
-bot_code_fixed = '''import os
+import os
 import json
 from datetime import datetime
 from flask import Flask, request
@@ -127,18 +125,18 @@ def channel_keyboard():
 
 # ============ ДАННЫЕ ОПРОСА ============
 STEPS = [
-    {'key': 'fio', 'ask': f"{EMOJI['user']} <b>ФИО владельца</b>\\n\\nВведите полностью фамилию, имя и отчество", 'kb': None},
-    {'key': 'phone', 'ask': f"{EMOJI['phone']} <b>Телефон</b>\\n\\nВведите номер для связи:\\n• +79001234567\\n• 89001234567", 'kb': None},
-    {'key': 'telegram', 'ask': f"{EMOJI['paw']} <b>Telegram</b> (необязательно)\\n\\nВведите @username или напишите <b>-</b> если нет", 'kb': None},
-    {'key': 'address', 'ask': f"{EMOJI['home']} <b>Адрес</b>\\n\\nГде проживаете?\\n(улица, дом, квартира)", 'kb': None},
-    {'key': 'consent', 'ask': f"{EMOJI['bell']} <b>Согласие на уведомления</b>\\n\\nМожем ли мы присылать напоминания о прививках?", 'kb': yes_no_keyboard()},
+    {'key': 'fio', 'ask': f"{EMOJI['user']} <b>ФИО владельца</b>\n\nВведите полностью фамилию, имя и отчество", 'kb': None},
+    {'key': 'phone', 'ask': f"{EMOJI['phone']} <b>Телефон</b>\n\nВведите номер для связи:\n• +79001234567\n• 89001234567", 'kb': None},
+    {'key': 'telegram', 'ask': f"{EMOJI['paw']} <b>Telegram</b> (необязательно)\n\nВведите @username или напишите <b>-</b> если нет", 'kb': None},
+    {'key': 'address', 'ask': f"{EMOJI['home']} <b>Адрес</b>\n\nГде проживаете?\n(улица, дом, квартира)", 'kb': None},
+    {'key': 'consent', 'ask': f"{EMOJI['bell']} <b>Согласие на уведомления</b>\n\nМожем ли мы присылать напоминания о прививках?", 'kb': yes_no_keyboard()},
     {'key': 'animal_type', 'ask': f"{EMOJI['paw']} <b>Вид животного</b>", 'kb': animal_keyboard()},
     {'key': 'nickname', 'ask': f"{EMOJI['heart']} <b>Кличка питомца</b>", 'kb': None},
     {'key': 'sex', 'ask': f"<b>Пол</b>", 'kb': sex_keyboard()},
-    {'key': 'age_or_dob', 'ask': f"{EMOJI['calendar']} <b>Возраст или дата рождения</b>\\n\\nПримеры:\\n• 3 года\\n• 2020-05-15", 'kb': None},
-    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} <b>Тип прививки</b>\\n\\n• Бешенство\\n• Комплексная\\n• Другое", 'kb': None},
-    {'key': 'vaccine_date', 'ask': f"{EMOJI['calendar']} <b>Дата прививки</b>\\n\\n• Сегодня\\n• 2025-02-13", 'kb': None},
-    {'key': 'term_months', 'ask': f"<b>Срок действия</b> (месяцев)\\n\\n• 12 — бешенство\\n• 36 — комплексная", 'kb': None},
+    {'key': 'age_or_dob', 'ask': f"{EMOJI['calendar']} <b>Возраст или дата рождения</b>\n\nПримеры:\n• 3 года\n• 2020-05-15", 'kb': None},
+    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} <b>Тип прививки</b>\n\n• Бешенство\n• Комплексная\n• Другое", 'kb': None},
+    {'key': 'vaccine_date', 'ask': f"{EMOJI['calendar']} <b>Дата прививки</b>\n\n• Сегодня\n• 2025-02-13", 'kb': None},
+    {'key': 'term_months', 'ask': f"<b>Срок действия</b> (месяцев)\n\n• 12 — бешенство\n• 36 — комплексная", 'kb': None},
     {'key': 'channel', 'ask': f"{EMOJI['bell']} <b>Канал напоминаний</b>", 'kb': channel_keyboard()},
 ]
 
@@ -205,7 +203,7 @@ def webhook():
         # Отмена
         if f"{EMOJI['cancel']} Отмена" in text or text == '/cancel':
             user_states.pop(chat_id, None)
-            send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\\n\\nЧто дальше?", main_keyboard())
+            send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_keyboard())
             return 'ok'
         
         # Новая запись
@@ -223,17 +221,17 @@ def webhook():
         
         # Поиск (заглушка)
         if f"{EMOJI['search']} Поиск" in text:
-            send_message(chat_id, f"{EMOJI['search']} <b>Поиск</b>\\n\\nВведите телефон или кличку:")
+            send_message(chat_id, f"{EMOJI['search']} <b>Поиск</b>\n\nВведите телефон или кличку:")
             return 'ok'
         
         # Мои записи (заглушка)
         if f"{EMOJI['list']} Мои записи" in text:
-            send_message(chat_id, f"{EMOJI['calendar']} Сегодня: 3 приёма\\n{EMOJI['urgent']} Срочно: 2\\n{EMOJI['warning']} Скоро: 5")
+            send_message(chat_id, f"{EMOJI['calendar']} Сегодня: 3 приёма\n{EMOJI['urgent']} Срочно: 2\n{EMOJI['warning']} Скоро: 5")
             return 'ok'
         
         # Контакты
         if f"{EMOJI['phone']} Контакты" in text:
-            send_message(chat_id, f"{EMOJI['paw']} <b>Ветеринарная клиника</b>\\n\\n📞 +7 (XXX) XXX-XX-XX\\n🕐 Пн-Пт: 9:00-18:00\\n🕐 Сб: 9:00-14:00")
+            send_message(chat_id, f"{EMOJI['paw']} <b>Ветеринарная клиника</b>\n\n📞 +7 (XXX) XXX-XX-XX\n🕐 Пн-Пт: 9:00-18:00\n🕐 Сб: 9:00-14:00")
             return 'ok'
         
         # Проверка состояния
@@ -270,7 +268,7 @@ def webhook():
         if step['key'] == 'phone':
             value = text.replace(' ', '').replace('-', '')
             if not value.replace('+', '').isdigit() or len(value.replace('+', '')) < 10:
-                send_message(chat_id, f"{EMOJI['warning']} Неверный формат.\\nПример: +79001234567")
+                send_message(chat_id, f"{EMOJI['warning']} Неверный формат.\nПример: +79001234567")
                 return 'ok'
         
         if step['key'] == 'term_months':
@@ -321,12 +319,3 @@ def health():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
-'''
-
-# Сохраняем исправленную версию
-with open('/mnt/kimi/output/bot_fixed.py', 'w', encoding='utf-8') as f:
-    f.write(bot_code_fixed)
-
-print("✅ Исправленный код создан!")
-print("\nУбрана строка с /mnt/kimi/output/")
-print("Теперь можно смело копировать в GitHub")
