@@ -1,6 +1,6 @@
 
-# Обновленный код бота с новым стилем
-bot_code = '''import os
+# Исправленный код без лишней строки
+bot_code_fixed = '''import os
 import json
 from datetime import datetime
 from flask import Flask, request
@@ -76,9 +76,9 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
 def main_keyboard():
     return {
         'keyboard': [
-            [{f"{EMOJI['plus']} Новая запись"}],
-            [{f"{EMOJI['search']} Поиск"}, {f"{EMOJI['list']} Мои записи"}],
-            [{f"{EMOJI['phone']} Контакты клиники"}]
+            [f"{EMOJI['plus']} Новая запись"],
+            [f"{EMOJI['search']} Поиск", f"{EMOJI['list']} Мои записи"],
+            [f"{EMOJI['phone']} Контакты клиники"]
         ],
         'resize_keyboard': True,
         'one_time_keyboard': False
@@ -87,8 +87,8 @@ def main_keyboard():
 def yes_no_keyboard():
     return {
         'keyboard': [
-            [{f"{EMOJI['check']} Да"}, {f"{EMOJI['cross']} Нет"}],
-            [{f"{EMOJI['cancel']} Отмена"}]
+            [f"{EMOJI['check']} Да", f"{EMOJI['cross']} Нет"],
+            [f"{EMOJI['cancel']} Отмена"]
         ],
         'resize_keyboard': True,
         'one_time_keyboard': True
@@ -97,9 +97,9 @@ def yes_no_keyboard():
 def animal_keyboard():
     return {
         'keyboard': [
-            [{f"{EMOJI['dog']} Собака"}, {f"{EMOJI['cat']} Кошка"}],
-            [{f"{EMOJI['rabbit']} Другое"}],
-            [{f"{EMOJI['cancel']} Отмена"}]
+            [f"{EMOJI['dog']} Собака", f"{EMOJI['cat']} Кошка"],
+            [f"{EMOJI['rabbit']} Другое"],
+            [f"{EMOJI['cancel']} Отмена"]
         ],
         'resize_keyboard': True,
         'one_time_keyboard': True
@@ -108,8 +108,8 @@ def animal_keyboard():
 def sex_keyboard():
     return {
         'keyboard': [
-            [{"♂ М"}, {"♀ Ж"}],
-            [{f"{EMOJI['cancel']} Отмена"}]
+            ["♂ М", "♀ Ж"],
+            [f"{EMOJI['cancel']} Отмена"]
         ],
         'resize_keyboard': True,
         'one_time_keyboard': True
@@ -118,8 +118,8 @@ def sex_keyboard():
 def channel_keyboard():
     return {
         'keyboard': [
-            [{f"{EMOJI['bell']} SMS"}, {f"{EMOJI['paw']} Telegram"}],
-            [{f"{EMOJI['cancel']} Отмена"}]
+            [f"{EMOJI['bell']} SMS", f"{EMOJI['paw']} Telegram"],
+            [f"{EMOJI['cancel']} Отмена"]
         ],
         'resize_keyboard': True,
         'one_time_keyboard': True
@@ -323,15 +323,10 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=port)
 '''
 
-# Сохраняем
-with open('/mnt/kimi/output/bdpj_bot_styled.py', 'w', encoding='utf-8') as f:
-    f.write(bot_code)
+# Сохраняем исправленную версию
+with open('/mnt/kimi/output/bot_fixed.py', 'w', encoding='utf-8') as f:
+    f.write(bot_code_fixed)
 
-print("✅ Бот обновлён со стилем БДПЖ!")
-print("\nЧто изменено:")
-print("- Эмодзи везде: 🌿🐾❤️ 🔍 📋 ➕")
-print("- Красивые кнопки с иконками")
-print("- Стилизованные сообщения")
-print("- Приветствие с логотипом")
-print("- Цветные разделители")
-print("\nФайл: bdpj_bot_styled.py")
+print("✅ Исправленный код создан!")
+print("\nУбрана строка с /mnt/kimi/output/")
+print("Теперь можно смело копировать в GitHub")
