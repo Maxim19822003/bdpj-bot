@@ -70,6 +70,28 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
     except Exception as e:
         print(f"Error sending message: {e}")
 
+def send_photo(chat_id, photo_path, caption=None, keyboard=None):
+    """Отправка фото с подписью"""
+    url = f'https://api.telegram.org/bot{TOKEN}/sendPhoto'
+    
+    with open(photo_path, 'rb') as photo_file:
+        files = {'photo': photo_file}
+        data = {
+            'chat_id': chat_id,
+            'caption': caption or '',
+            'parse_mode': 'HTML',
+            'reply_markup': json.dumps(keyboard) if keyboard else json.dumps({'remove_keyboard': True})
+        }
+        try:
+            response = requests.post(url, files=files, data=data, timeout=10)
+            result = response.json()
+            if not result.get('ok'):
+                print(f"Telegram API error: {result}")
+            return result
+        except Exception as e:
+            print(f"Error sending photo: {e}")
+            return None
+
 # ============ КЛАВИАТУРЫ ============
 def main_keyboard():
     return {
@@ -192,12 +214,26 @@ def webhook():
         # /start
         if text == '/start':
             user_states.pop(chat_id, None)
-            welcome_text = f"""{EMOJI['logo']} <b>БДПЖ Боровск</b>
+            
+            # Путь к логотипу
+            logo_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.png')
+            
+            # Проверяем, есть ли файл
+            if os.path.exists(logo_path):
+                welcome_caption = f"""{EMOJI['logo']} <b>БДПЖ Боровск</b>
 
 База данных привитых животных
 
 Выберите действие 👇"""
-            send_message(chat_id, welcome_text, main_keyboard())
+                send_photo(chat_id, logo_path, welcome_caption, main_keyboard())
+            else:
+                # Fallback на текст, если картинки нет
+                welcome_text = f"""{EMOJI['logo']} <b>БДПЖ Боровск</b>
+
+База данных привитых животных
+
+Выберите действие 👇"""
+                send_message(chat_id, welcome_text, main_keyboard())
             return 'ok'
         
         # Отмена
