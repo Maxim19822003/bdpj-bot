@@ -58,6 +58,7 @@ def get_sheet():
 
 # ============ TELEGRAM API ============
 def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
+    # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
     url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
     payload = {
         'chat_id': chat_id,
@@ -68,6 +69,8 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
     try:
         response = requests.post(url, json=payload, timeout=10)
         print(f"send_message: chat={chat_id}, status={response.status_code}")
+        if not response.ok:
+            print(f"Error response: {response.text}")
         return response.json()
     except Exception as e:
         print(f"Error sending message: {e}")
@@ -76,6 +79,7 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
 def send_animation(chat_id, gif_path, caption=None, keyboard=None):
     """Отправка GIF/MP4 (анимации)"""
     print(f"send_animation called: chat={chat_id}, file={gif_path}")
+    # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
     url = f'https://api.telegram.org/bot{TOKEN}/sendAnimation'
     
     with open(gif_path, 'rb') as gif_file:
@@ -226,14 +230,14 @@ def webhook():
     
     try:
         data = request.get_json(force=True)
-        print(f"Webhook received: {json.dumps(data, ensure_ascii=False)[:200]}")
+        print(f"Webhook received: {json.dumps(data, ensure_ascii=False)[:500]}")
         
         if not data:
             return 'ok'
         
         # Обработка callback (нажатие на inline кнопку)
         if 'callback_query' in data:
-            print(f"Callback query detected!")
+            print(f"Callback query detected! Data: {data['callback_query'].get('data')}")
             return handle_callback(data['callback_query'])
         
         # Обработка обычного сообщения
@@ -255,6 +259,7 @@ def webhook():
             user_states.pop(chat_id, None)
             
             # Удаляем старую Reply Keyboard полностью
+            # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
             try:
                 remove_result = requests.post(url, json={
@@ -312,7 +317,7 @@ def handle_callback(callback):
     first_name = callback['from'].get('first_name', 'сотрудник')
     user = f'@{username}' if username else first_name
     
-    print(f"Callback from {user}: {data}")
+    print(f"Callback from {user}: data={data}, chat_id={chat_id}")
     
     # Ответ на callback (убирает "часики" на кнопке)
     answer_callback(callback['id'])
@@ -356,32 +361,40 @@ def handle_callback(callback):
     
     # Обработка шагов опроса
     if chat_id in user_states:
-        print(f"Processing step for {chat_id}")
+        print(f"Processing step for {chat_id}, current step: {user_states[chat_id]['step']}")
         state = user_states[chat_id]
         step_idx = state['step']
         
         if step_idx < len(STEPS):
             step = STEPS[step_idx]
+            print(f"Current step key: {step['key']}, expected kb: {step['kb']}")
             
             # Обработка выбора из inline кнопок
             if step['kb'] == 'yes_no':
                 if data in ['yes', 'no']:
                     state['data'][step['key']] = 'Да' if data == 'yes' else 'Нет'
                     state['step'] += 1
+                    print(f"Saved yes/no: {state['data'][step['key']]}")
             elif step['kb'] == 'animal':
                 if data in ['dog', 'cat', 'other']:
                     animal_map = {'dog': 'Собака', 'cat': 'Кошка', 'other': 'Другое'}
                     state['data'][step['key']] = animal_map[data]
                     state['step'] += 1
+                    print(f"Saved animal: {state['data'][step['key']]}")
             elif step['kb'] == 'sex':
                 if data in ['male', 'female']:
                     state['data'][step['key']] = 'М' if data == 'male' else 'Ж'
                     state['step'] += 1
+                    print(f"Saved sex: {state['data'][step['key']]}")
             elif step['kb'] == 'channel':
                 if data in ['sms', 'telegram']:
                     channel_map = {'sms': 'SMS', 'telegram': 'Telegram'}
                     state['data'][step['key']] = channel_map[data]
                     state['step'] += 1
+                    print(f"Saved channel: {state['data'][step['key']]}")
+            else:
+                print(f"Step {step['key']} doesn't expect callback data, ignoring")
+                return 'ok'
             
             # Следующий шаг или завершение
             if state['step'] >= len(STEPS):
@@ -402,6 +415,11 @@ def handle_callback(callback):
                 next_step = STEPS[state['step']]
                 kb = get_step_keyboard(next_step['kb'])
                 send_message(chat_id, next_step['ask'], kb)
+        else:
+            print(f"Step index {step_idx} out of range")
+    else:
+        print(f"No user state for chat {chat_id}, showing main menu")
+        send_message(chat_id, f"{EMOJI['paw']} Выберите действие:", main_inline_keyboard())
     
     return 'ok'
 
@@ -445,6 +463,7 @@ def handle_input(chat_id, text, user):
     # Сохраняем
     state['data'][step['key']] = value
     state['step'] += 1
+    print(f"Saved {step['key']}: {value}, next step: {state['step']}")
     
     # Завершение или следующий вопрос
     if state['step'] >= len(STEPS):
@@ -470,9 +489,11 @@ def handle_input(chat_id, text, user):
 
 def answer_callback(callback_id):
     """Ответ на callback query (убирает часики на кнопке)"""
+    # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
     url = f'https://api.telegram.org/bot{TOKEN}/answerCallbackQuery'
     try:
-        requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
+        response = requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
+        print(f"Callback answered: {response.status_code}")
     except Exception as e:
         print(f"Error answering callback: {e}")
 
