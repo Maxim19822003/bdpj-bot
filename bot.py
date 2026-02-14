@@ -112,8 +112,8 @@ def format_search_results(results):
     for i, result in enumerate(results[:5], 1):
         record = result['data']
         
-        # Получаем поля с подчёркиванием
-        fio = record.get('Имя_владельца', 'Не указано')
+        # Пробуем разные варианты названий полей ФИО
+        fio = record.get('ФИО', record.get('Имя_владельца', record.get('Имя владельца', 'Не указано')))
         phone = record.get('Телефон', 'Не указан')
         pet = record.get('Кличка', 'Не указано')
         animal_type = record.get('Вид_животного', '')
@@ -147,7 +147,7 @@ def get_my_records(user_identifier):
     
     my_records = []
     for record in records:
-        staff = str(record.get('staff_tg', '')).lower()
+        staff = str(record.get('Сотрудник_TG', record.get('staff_tg', ''))).lower()
         user_id = user_identifier.lower().replace('@', '')
         
         if staff == user_identifier.lower() or staff == f"@{user_id}" or user_id in staff:
