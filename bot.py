@@ -58,7 +58,6 @@ def get_sheet():
 
 # ============ TELEGRAM API ============
 def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
-    # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
     url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
     payload = {
         'chat_id': chat_id,
@@ -79,7 +78,6 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
 def send_animation(chat_id, gif_path, caption=None, keyboard=None):
     """Отправка GIF/MP4 (анимации)"""
     print(f"send_animation called: chat={chat_id}, file={gif_path}")
-    # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
     url = f'https://api.telegram.org/bot{TOKEN}/sendAnimation'
     
     with open(gif_path, 'rb') as gif_file:
@@ -135,7 +133,7 @@ def animal_inline_keyboard():
                 {'text': f"{EMOJI['dog']} Собака", 'callback_data': 'dog'},
                 {'text': f"{EMOJI['cat']} Кошка", 'callback_data': 'cat'}
             ],
-            [{'text': f"{EMOJI['rabbit']} Другое", 'callback_data': 'other'}],
+            [{'text': f"{EMOJI['rabbit']} Другое", 'callback_data': 'other_animal'}],
             [{'text': f"{EMOJI['cancel']} Отмена", 'callback_data': 'cancel'}]
         ]
     }
@@ -162,18 +160,31 @@ def channel_inline_keyboard():
         ]
     }
 
+def vaccine_type_inline_keyboard():
+    """Клавиатура для выбора типа прививки"""
+    return {
+        'inline_keyboard': [
+            [
+                {'text': 'Бешенство', 'callback_data': 'vaccine_rabies'},
+                {'text': 'Комплексная', 'callback_data': 'vaccine_complex'}
+            ],
+            [{'text': 'Другое', 'callback_data': 'vaccine_other'}],
+            [{'text': f"{EMOJI['cancel']} Отмена", 'callback_data': 'cancel'}]
+        ]
+    }
+
 # ============ ДАННЫЕ ОПРОСА ============
 STEPS = [
     {'key': 'fio', 'ask': f"{EMOJI['user']} <b>ФИО владельца</b>\n\nВведите полностью фамилию, имя и отчество", 'kb': None},
     {'key': 'phone', 'ask': f"{EMOJI['phone']} <b>Телефон</b>\n\nВведите номер для связи:\n• +79001234567\n• 89001234567", 'kb': None},
-    {'key': 'telegram', 'ask': f"{EMOJI['paw']} <b>Telegram</b> (необязательно)\n\nВведите @username или напишите <b>-</b> если нет", 'kb': None},
-    {'key': 'address', 'ask': f"{EMOJI['home']} <b>Адрес</b>\n\nГде проживаете?\n(улица, дом, квартира)", 'kb': None},
+    {'key': 'telegram', 'ask': f"{EMOJI['paw']} <b>Telegram</b> (необязательно)\n\nВведите @username или напишите <b>«-»</b> если нет", 'kb': None},
+    {'key': 'address', 'ask': f"{EMOJI['home']} <b>Адрес</b>\n\nГде проживаете?\n<b>Город</b>, улица, дом, квартира", 'kb': None},
     {'key': 'consent', 'ask': f"{EMOJI['bell']} <b>Согласие на уведомления</b>\n\nМожем ли мы присылать напоминания о прививках?", 'kb': 'yes_no'},
     {'key': 'animal_type', 'ask': f"{EMOJI['paw']} <b>Вид животного</b>", 'kb': 'animal'},
     {'key': 'nickname', 'ask': f"{EMOJI['heart']} <b>Кличка питомца</b>", 'kb': None},
     {'key': 'sex', 'ask': f"<b>Пол</b>", 'kb': 'sex'},
     {'key': 'age_or_dob', 'ask': f"{EMOJI['calendar']} <b>Возраст или дата рождения</b>\n\nПримеры:\n• 3 года\n• 2020-05-15", 'kb': None},
-    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} <b>Тип прививки</b>\n\n• Бешенство\n• Комплексная\n• Другое", 'kb': None},
+    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} <b>Тип прививки</b>", 'kb': 'vaccine'},
     {'key': 'vaccine_date', 'ask': f"{EMOJI['calendar']} <b>Дата прививки</b>\n\n• Сегодня\n• 2025-02-13", 'kb': None},
     {'key': 'term_months', 'ask': f"<b>Срок действия</b> (месяцев)\n\n• 12 — бешенство\n• 36 — комплексная", 'kb': None},
     {'key': 'channel', 'ask': f"{EMOJI['bell']} <b>Канал напоминаний</b>", 'kb': 'channel'},
@@ -191,6 +202,8 @@ def get_step_keyboard(step_type):
         return sex_inline_keyboard()
     elif step_type == 'channel':
         return channel_inline_keyboard()
+    elif step_type == 'vaccine':
+        return vaccine_type_inline_keyboard()
     return None
 
 # ============ СОХРАНЕНИЕ ============
@@ -259,7 +272,6 @@ def webhook():
             user_states.pop(chat_id, None)
             
             # Удаляем старую Reply Keyboard полностью
-            # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
             try:
                 remove_result = requests.post(url, json={
@@ -376,16 +388,38 @@ def handle_callback(callback):
                     state['step'] += 1
                     print(f"Saved yes/no: {state['data'][step['key']]}")
             elif step['kb'] == 'animal':
-                if data in ['dog', 'cat', 'other']:
-                    animal_map = {'dog': 'Собака', 'cat': 'Кошка', 'other': 'Другое'}
-                    state['data'][step['key']] = animal_map[data]
+                if data == 'dog':
+                    state['data'][step['key']] = 'Собака'
                     state['step'] += 1
-                    print(f"Saved animal: {state['data'][step['key']]}")
+                    print(f"Saved animal: Собака")
+                elif data == 'cat':
+                    state['data'][step['key']] = 'Кошка'
+                    state['step'] += 1
+                    print(f"Saved animal: Кошка")
+                elif data == 'other_animal':
+                    # Переходим в режим ввода другого животного
+                    state['waiting_for'] = 'other_animal'
+                    send_message(chat_id, f"{EMOJI['paw']} <b>Укажите вид животного</b>\n\nНапример: кролик, хомяк, попугай...")
+                    return 'ok'
             elif step['kb'] == 'sex':
                 if data in ['male', 'female']:
                     state['data'][step['key']] = 'М' if data == 'male' else 'Ж'
                     state['step'] += 1
                     print(f"Saved sex: {state['data'][step['key']]}")
+            elif step['kb'] == 'vaccine':
+                if data == 'vaccine_rabies':
+                    state['data'][step['key']] = 'Бешенство'
+                    state['step'] += 1
+                    print(f"Saved vaccine: Бешенство")
+                elif data == 'vaccine_complex':
+                    state['data'][step['key']] = 'Комплексная'
+                    state['step'] += 1
+                    print(f"Saved vaccine: Комплексная")
+                elif data == 'vaccine_other':
+                    # Переходим в режим ввода другого типа прививки
+                    state['waiting_for'] = 'other_vaccine'
+                    send_message(chat_id, f"{EMOJI['syringe']} <b>Укажите тип прививки</b>")
+                    return 'ok'
             elif step['kb'] == 'channel':
                 if data in ['sms', 'telegram']:
                     channel_map = {'sms': 'SMS', 'telegram': 'Telegram'}
@@ -430,6 +464,37 @@ def handle_input(chat_id, text, user):
     state = user_states[chat_id]
     step_idx = state['step']
     
+    # Проверяем, ждём ли мы специальный ввод (другое животное или другая прививка)
+    if state.get('waiting_for') == 'other_animal':
+        state['data']['animal_type'] = text
+        state.pop('waiting_for')
+        state['step'] += 1
+        print(f"Saved other animal: {text}")
+        
+        # Переходим к следующему шагу
+        if state['step'] >= len(STEPS):
+            return finish_record(chat_id, state)
+        else:
+            next_step = STEPS[state['step']]
+            kb = get_step_keyboard(next_step['kb'])
+            send_message(chat_id, next_step['ask'], kb)
+        return 'ok'
+    
+    if state.get('waiting_for') == 'other_vaccine':
+        state['data']['vaccine_type'] = text
+        state.pop('waiting_for')
+        state['step'] += 1
+        print(f"Saved other vaccine: {text}")
+        
+        # Переходим к следующему шагу
+        if state['step'] >= len(STEPS):
+            return finish_record(chat_id, state)
+        else:
+            next_step = STEPS[state['step']]
+            kb = get_step_keyboard(next_step['kb'])
+            send_message(chat_id, next_step['ask'], kb)
+        return 'ok'
+    
     if step_idx >= len(STEPS):
         user_states.pop(chat_id, None)
         return 'ok'
@@ -467,19 +532,7 @@ def handle_input(chat_id, text, user):
     
     # Завершение или следующий вопрос
     if state['step'] >= len(STEPS):
-        print(f"Saving final data for {chat_id}")
-        if save_to_sheet(state['data']):
-            success_text = f"""{EMOJI['ok']} <b>Записано!</b>
-
-Питомец: <b>{state['data'].get('nickname', '')}</b>
-Прививка: {state['data'].get('vaccine_type', '')}
-Срок: {state['data'].get('term_months', '')} мес.
-
-{EMOJI['bell']} Напоминание придёт за 3 дня до окончания срока."""
-            send_message(chat_id, success_text, main_inline_keyboard())
-        else:
-            send_message(chat_id, f"{EMOJI['cross']} Ошибка записи. Попробуйте позже.", main_inline_keyboard())
-        user_states.pop(chat_id, None)
+        return finish_record(chat_id, state)
     else:
         next_step = STEPS[state['step']]
         kb = get_step_keyboard(next_step['kb'])
@@ -487,9 +540,25 @@ def handle_input(chat_id, text, user):
     
     return 'ok'
 
+def finish_record(chat_id, state):
+    """Завершение записи и сохранение в таблицу"""
+    print(f"Saving final data for {chat_id}")
+    if save_to_sheet(state['data']):
+        success_text = f"""{EMOJI['ok']} <b>Записано!</b>
+
+Питомец: <b>{state['data'].get('nickname', '')}</b>
+Прививка: {state['data'].get('vaccine_type', '')}
+Срок: {state['data'].get('term_months', '')} мес.
+
+{EMOJI['bell']} Напоминание придёт за 3 дня до окончания срока."""
+        send_message(chat_id, success_text, main_inline_keyboard())
+    else:
+        send_message(chat_id, f"{EMOJI['cross']} Ошибка записи. Попробуйте позже.", main_inline_keyboard())
+    user_states.pop(chat_id, None)
+    return 'ok'
+
 def answer_callback(callback_id):
     """Ответ на callback query (убирает часики на кнопке)"""
-    # ✅ ИСПРАВЛЕНО: убраны пробелы в URL
     url = f'https://api.telegram.org/bot{TOKEN}/answerCallbackQuery'
     try:
         response = requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
