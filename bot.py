@@ -243,7 +243,7 @@ def webhook():
         if text == '/start':
             user_states.pop(chat_id, None)
             
-            gif_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.gif')
+            gif_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.mp4')
             
             welcome_caption = f"""{EMOJI['logo']} <b>БДПЖ Боровск</b>
 
@@ -444,3 +444,4 @@ def health():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
+
