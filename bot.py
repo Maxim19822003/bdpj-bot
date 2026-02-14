@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from datetime import datetime
 from flask import Flask, request
 import gspread
@@ -36,7 +37,9 @@ EMOJI = {
     'user': '👤',
     'bell': '🔔',
     'check': '✓',
-    'cross': '✕'
+    'cross': '✕',
+    'clock': '🕐',
+    'location': '📍'
 }
 
 # ============ GOOGLE SHEETS ============
@@ -56,15 +59,26 @@ def get_sheet():
     client = gspread.authorize(creds)
     return client.open_by_key(SHEET_ID).worksheet('Ввод_бот')
 
+def get_all_records():
+    """Получить все записи из таблицы"""
+    try:
+        sheet = get_sheet()
+        return sheet.get_all_records()
+    except Exception as e:
+        print(f"Error getting records: {e}")
+        return []
+
 # ============ TELEGRAM API ============
-def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
+def send_message(chat_id, text, keyboard=None, parse_mode=None):
     url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
     payload = {
         'chat_id': chat_id,
         'text': text,
-        'parse_mode': parse_mode,
         'reply_markup': keyboard if keyboard else {'remove_keyboard': True}
     }
+    if parse_mode:
+        payload['parse_mode'] = parse_mode
+    
     try:
         response = requests.post(url, json=payload, timeout=10)
         print(f"send_message: chat={chat_id}, status={response.status_code}")
@@ -76,7 +90,6 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
         return None
 
 def send_animation(chat_id, gif_path, caption=None, keyboard=None):
-    """Отправка GIF/MP4 (анимации)"""
     print(f"send_animation called: chat={chat_id}, file={gif_path}")
     url = f'https://api.telegram.org/bot{TOKEN}/sendAnimation'
     
@@ -85,7 +98,6 @@ def send_animation(chat_id, gif_path, caption=None, keyboard=None):
         data = {
             'chat_id': chat_id,
             'caption': caption or '',
-            'parse_mode': 'HTML'
         }
         if keyboard:
             data['reply_markup'] = json.dumps(keyboard)
@@ -93,7 +105,7 @@ def send_animation(chat_id, gif_path, caption=None, keyboard=None):
         try:
             response = requests.post(url, files=files, data=data, timeout=10)
             result = response.json()
-            print(f"send_animation result: {result.get('ok')}, error: {result.get('description') if not result.get('ok') else 'none'}")
+            print(f"send_animation result: {result.get('ok')}")
             return result
         except Exception as e:
             print(f"Error sending animation: {e}")
@@ -101,7 +113,6 @@ def send_animation(chat_id, gif_path, caption=None, keyboard=None):
 
 # ============ INLINE КЛАВИАТУРЫ ============
 def main_inline_keyboard():
-    """Главное меню - inline кнопки в 2 ряда"""
     return {
         'inline_keyboard': [
             [
@@ -161,7 +172,6 @@ def channel_inline_keyboard():
     }
 
 def vaccine_type_inline_keyboard():
-    """Клавиатура для выбора типа прививки"""
     return {
         'inline_keyboard': [
             [
@@ -175,25 +185,24 @@ def vaccine_type_inline_keyboard():
 
 # ============ ДАННЫЕ ОПРОСА ============
 STEPS = [
-    {'key': 'fio', 'ask': f"{EMOJI['user']} <b>ФИО владельца</b>\n\nВведите полностью фамилию, имя и отчество", 'kb': None},
-    {'key': 'phone', 'ask': f"{EMOJI['phone']} <b>Телефон</b>\n\nВведите номер для связи:\n• +79001234567\n• 89001234567", 'kb': None},
-    {'key': 'telegram', 'ask': f"{EMOJI['paw']} <b>Telegram</b> (необязательно)\n\nВведите @username или напишите <b>«-»</b> если нет", 'kb': None},
-    {'key': 'address', 'ask': f"{EMOJI['home']} <b>Адрес</b>\n\nГде проживаете?\n<b>Город</b>, улица, дом, квартира", 'kb': None},
-    {'key': 'consent', 'ask': f"{EMOJI['bell']} <b>Согласие на уведомления</b>\n\nМожем ли мы присылать напоминания о прививках?", 'kb': 'yes_no'},
-    {'key': 'animal_type', 'ask': f"{EMOJI['paw']} <b>Вид животного</b>", 'kb': 'animal'},
-    {'key': 'nickname', 'ask': f"{EMOJI['heart']} <b>Кличка питомца</b>", 'kb': None},
-    {'key': 'sex', 'ask': f"<b>Пол</b>", 'kb': 'sex'},
-    {'key': 'age_or_dob', 'ask': f"{EMOJI['calendar']} <b>Возраст или дата рождения</b>\n\nПримеры:\n• 3 года\n• 2020-05-15", 'kb': None},
-    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} <b>Тип прививки</b>", 'kb': 'vaccine'},
-    {'key': 'vaccine_date', 'ask': f"{EMOJI['calendar']} <b>Дата прививки</b>\n\n• Сегодня\n• 2025-02-13", 'kb': None},
-    {'key': 'term_months', 'ask': f"<b>Срок действия</b> (месяцев)\n\n• 12 — бешенство\n• 36 — комплексная", 'kb': None},
-    {'key': 'channel', 'ask': f"{EMOJI['bell']} <b>Канал напоминаний</b>", 'kb': 'channel'},
+    {'key': 'fio', 'ask': f"{EMOJI['user']} ФИО владельца\n\nВведите полностью фамилию, имя и отчество", 'kb': None},
+    {'key': 'phone', 'ask': f"{EMOJI['phone']} Телефон\n\nНапример:\n• +79001234567\n• 89001234567", 'kb': None},
+    {'key': 'telegram', 'ask': f"{EMOJI['paw']} Telegram (необязательно)\n\nВведите @username или напишите «-» если нет", 'kb': None},
+    {'key': 'address', 'ask': f"{EMOJI['home']} Адрес\n\nГде проживаете?\nГород, улица, дом, квартира", 'kb': None},
+    {'key': 'consent', 'ask': f"{EMOJI['bell']} Согласие на уведомления\n\nМожем ли мы присылать напоминания о прививках?", 'kb': 'yes_no'},
+    {'key': 'animal_type', 'ask': f"{EMOJI['paw']} Вид животного", 'kb': 'animal'},
+    {'key': 'nickname', 'ask': f"{EMOJI['heart']} Кличка питомца", 'kb': None},
+    {'key': 'sex', 'ask': "Пол", 'kb': 'sex'},
+    {'key': 'age_or_dob', 'ask': f"{EMOJI['calendar']} Возраст или дата рождения\n\nПримеры:\n• 3 года\n• 2020-05-15", 'kb': None},
+    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} Тип прививки", 'kb': 'vaccine'},
+    {'key': 'vaccine_date', 'ask': f"{EMOJI['calendar']} Дата прививки\n\n• Сегодня\n• 2025-02-13", 'kb': None},
+    {'key': 'term_months', 'ask': f"Срок действия (месяцев)\n\n• 12 — бешенство\n• 36 — комплексная", 'kb': None},
+    {'key': 'channel', 'ask': f"{EMOJI['bell']} Канал напоминаний", 'kb': 'channel'},
 ]
 
 user_states = {}
 
 def get_step_keyboard(step_type):
-    """Возвращает inline клавиатуру для шага"""
     if step_type == 'yes_no':
         return yes_no_inline_keyboard()
     elif step_type == 'animal':
@@ -205,6 +214,100 @@ def get_step_keyboard(step_type):
     elif step_type == 'vaccine':
         return vaccine_type_inline_keyboard()
     return None
+
+# ============ ЛОГИКА МОИХ ЗАПИСЕЙ ============
+def get_my_records(user_identifier):
+    """Получить записи пользователя за сегодня"""
+    records = get_all_records()
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    my_records = []
+    for record in records:
+        # Ищем по имени пользователя (staff_tg) или username
+        if record.get('staff_tg') == user_identifier or record.get('staff_tg') == f"@{user_identifier}":
+            # Проверяем дату (если есть колонка date_visit)
+            record_date = record.get('date_visit', '')
+            if str(record_date) == today:
+                my_records.append(record)
+    
+    return my_records
+
+def format_records_summary(records):
+    """Форматировать записи для вывода"""
+    if not records:
+        return f"{EMOJI['calendar']} Сегодня записей нет"
+    
+    total = len(records)
+    urgent = 0  # Можно добавить логику подсчета срочных
+    soon = 0    # Можно добавить логику подсчета "скоро"
+    
+    return f"{EMOJI['calendar']} Сегодня: {total} приёмов\n{EMOJI['urgent']} Срочно: {urgent}\n{EMOJI['warning']} Скоро: {soon}"
+
+def get_records_details(records):
+    """Получить детали записей"""
+    if not records:
+        return "Записей пока нет"
+    
+    details = []
+    for i, record in enumerate(records[:10], 1):  # Показываем последние 10
+        pet = record.get('nickname', 'Не указано')
+        animal = record.get('animal_type', '')
+        vaccine = record.get('vaccine_type', '')
+        date = record.get('vaccine_date', '')
+        
+        details.append(f"{i}. {pet} ({animal}) - {vaccine}, {date}")
+    
+    return "\n".join(details)
+
+# ============ ЛОГИКА ПОИСКА ============
+def search_records(query):
+    """Поиск по телефону или кличке"""
+    records = get_all_records()
+    results = []
+    
+    query_lower = query.lower().strip()
+    
+    for record in records:
+        phone = str(record.get('phone', '')).lower()
+        nickname = str(record.get('nickname', '')).lower()
+        fio = str(record.get('fio', '')).lower()
+        
+        # Ищем точное или частичное совпадение
+        if (query_lower in phone or 
+            query_lower in nickname or 
+            query_lower in fio or
+            phone in query_lower or
+            nickname in query_lower):
+            results.append(record)
+    
+    return results
+
+def format_search_results(results):
+    """Форматировать результаты поиска"""
+    if not results:
+        return f"{EMOJI['warning']} Ничего не найдено\n\nПопробуйте другой запрос или проверьте правильность написания."
+    
+    text = f"{EMOJI['search']} Найдено записей: {len(results)}\n\n"
+    
+    for i, record in enumerate(results[:5], 1):  # Показываем первые 5
+        fio = record.get('fio', 'Не указано')
+        phone = record.get('phone', 'Не указан')
+        pet = record.get('nickname', 'Не указано')
+        animal = record.get('animal_type', '')
+        vaccine = record.get('vaccine_type', '')
+        date = record.get('vaccine_date', '')
+        status = record.get('status', 'Новый')
+        
+        text += f"{i}. {EMOJI['user']} {fio}\n"
+        text += f"   {EMOJI['phone']} {phone}\n"
+        text += f"   {EMOJI['paw']} {pet} ({animal})\n"
+        text += f"   {EMOJI['syringe']} {vaccine} ({date})\n"
+        text += f"   Статус: {status}\n\n"
+    
+    if len(results) > 5:
+        text += f"... и ещё {len(results) - 5} записей"
+    
+    return text
 
 # ============ СОХРАНЕНИЕ ============
 def save_to_sheet(data):
@@ -248,7 +351,7 @@ def webhook():
         if not data:
             return 'ok'
         
-        # Обработка callback (нажатие на inline кнопку)
+        # Обработка callback
         if 'callback_query' in data:
             print(f"Callback query detected! Data: {data['callback_query'].get('data')}")
             return handle_callback(data['callback_query'])
@@ -271,45 +374,48 @@ def webhook():
             print(f"Processing /start for chat {chat_id}")
             user_states.pop(chat_id, None)
             
-            # Удаляем старую Reply Keyboard полностью
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
             try:
-                remove_result = requests.post(url, json={
+                requests.post(url, json={
                     'chat_id': chat_id,
                     'text': '⌛',
                     'reply_markup': {'remove_keyboard': True}
                 }, timeout=5)
-                print(f"Remove keyboard result: {remove_result.status_code}")
             except Exception as e:
                 print(f"Error removing keyboard: {e}")
             
             gif_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.mp4')
-            print(f"GIF path: {gif_path}, exists: {os.path.exists(gif_path)}")
             
-            welcome_caption = f"""{EMOJI['logo']} <b>БДПЖ Боровск</b>
+            welcome_caption = f"""{EMOJI['logo']} БДПЖ Боровск
 
 База данных привитых животных
 
 Выберите действие 👇"""
             
             if os.path.exists(gif_path):
-                result = send_animation(chat_id, gif_path, welcome_caption, main_inline_keyboard())
-                print(f"Animation sent: {result is not None}")
+                send_animation(chat_id, gif_path, welcome_caption, main_inline_keyboard())
             else:
                 send_message(chat_id, welcome_caption, main_inline_keyboard())
             return 'ok'
         
-        # Отмена через текст
+        # Отмена
         if text == '/cancel':
             user_states.pop(chat_id, None)
             send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_inline_keyboard())
+            return 'ok'
+        
+        # Обработка поиска (если пользователь в режиме поиска)
+        if chat_id in user_states and user_states[chat_id].get('mode') == 'search':
+            del user_states[chat_id]['mode']
+            results = search_records(text)
+            send_message(chat_id, format_search_results(results), main_inline_keyboard())
             return 'ok'
         
         # Проверка состояния (ввод данных)
         if chat_id in user_states:
             return handle_input(chat_id, text, user)
         
-        # Если нет состояния - показываем меню
+        # Если нет состояния
         send_message(chat_id, f"{EMOJI['paw']} Нажмите кнопку в меню выше или отправьте /start", main_inline_keyboard())
         
     except Exception as e:
@@ -321,22 +427,18 @@ def webhook():
 
 def handle_callback(callback):
     """Обработка нажатий на inline кнопки"""
-    print(f"handle_callback started")
-    
     chat_id = callback['message']['chat']['id']
     data = callback['data']
     username = callback['from'].get('username', '')
     first_name = callback['from'].get('first_name', 'сотрудник')
     user = f'@{username}' if username else first_name
     
-    print(f"Callback from {user}: data={data}, chat_id={chat_id}")
+    print(f"Callback from {user}: data={data}")
     
-    # Ответ на callback (убирает "часики" на кнопке)
     answer_callback(callback['id'])
     
     # Главное меню
     if data == 'new_record':
-        print(f"Starting new record for {chat_id}")
         user_states[chat_id] = {
             'step': 0,
             'data': {
@@ -350,128 +452,95 @@ def handle_callback(callback):
         return 'ok'
     
     if data == 'search':
-        print(f"Search requested")
-        send_message(chat_id, f"{EMOJI['search']} <b>Поиск</b>\n\nВведите телефон или кличку:")
+        # Устанавливаем режим поиска
+        user_states[chat_id] = {'mode': 'search'}
+        send_message(chat_id, f"{EMOJI['search']} Поиск\n\nВведите телефон или кличку:")
         return 'ok'
     
     if data == 'my_records':
-        print(f"My records requested")
-        send_message(chat_id, f"{EMOJI['calendar']} Сегодня: 3 приёма\n{EMOJI['urgent']} Срочно: 2\n{EMOJI['warning']} Скоро: 5")
+        # Получаем реальные записи пользователя
+        records = get_my_records(user)
+        summary = format_records_summary(records)
+        details = get_records_details(records)
+        
+        text = f"{EMOJI['list']} Мои записи\n\n{summary}\n\n{details}"
+        send_message(chat_id, text, main_inline_keyboard())
         return 'ok'
     
     if data == 'contacts':
-        print(f"Contacts requested")
-        send_message(chat_id, f"{EMOJI['paw']} <b>Ветеринарная клиника</b>\n\n📞 +7 (XXX) XXX-XX-XX\n🕐 Пн-Пт: 9:00-18:00\n🕐 Сб: 9:00-14:00")
+        send_message(chat_id, f"{EMOJI['paw']} Ветеринарная клиника\n\n{EMOJI['phone']} +7 (XXX) XXX-XX-XX\n{EMOJI['clock']} Пн-Пт: 9:00-18:00\n{EMOJI['clock']} Сб: 9:00-14:00")
         return 'ok'
     
     # Отмена
     if data == 'cancel':
-        print(f"Cancel requested")
         user_states.pop(chat_id, None)
         send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_inline_keyboard())
         return 'ok'
     
     # Обработка шагов опроса
-    if chat_id in user_states:
-        print(f"Processing step for {chat_id}, current step: {user_states[chat_id]['step']}")
+    if chat_id in user_states and 'step' in user_states[chat_id]:
         state = user_states[chat_id]
         step_idx = state['step']
         
         if step_idx < len(STEPS):
             step = STEPS[step_idx]
-            print(f"Current step key: {step['key']}, expected kb: {step['kb']}")
             
-            # Обработка выбора из inline кнопок
             if step['kb'] == 'yes_no':
                 if data in ['yes', 'no']:
                     state['data'][step['key']] = 'Да' if data == 'yes' else 'Нет'
                     state['step'] += 1
-                    print(f"Saved yes/no: {state['data'][step['key']]}")
             elif step['kb'] == 'animal':
                 if data == 'dog':
                     state['data'][step['key']] = 'Собака'
                     state['step'] += 1
-                    print(f"Saved animal: Собака")
                 elif data == 'cat':
                     state['data'][step['key']] = 'Кошка'
                     state['step'] += 1
-                    print(f"Saved animal: Кошка")
                 elif data == 'other_animal':
-                    # Переходим в режим ввода другого животного
                     state['waiting_for'] = 'other_animal'
-                    send_message(chat_id, f"{EMOJI['paw']} <b>Укажите вид животного</b>\n\nНапример: кролик, хомяк, попугай...")
+                    send_message(chat_id, f"{EMOJI['paw']} Укажите вид животного\n\nНапример: кролик, хомяк, попугай...")
                     return 'ok'
             elif step['kb'] == 'sex':
                 if data in ['male', 'female']:
                     state['data'][step['key']] = 'М' if data == 'male' else 'Ж'
                     state['step'] += 1
-                    print(f"Saved sex: {state['data'][step['key']]}")
             elif step['kb'] == 'vaccine':
                 if data == 'vaccine_rabies':
                     state['data'][step['key']] = 'Бешенство'
                     state['step'] += 1
-                    print(f"Saved vaccine: Бешенство")
                 elif data == 'vaccine_complex':
                     state['data'][step['key']] = 'Комплексная'
                     state['step'] += 1
-                    print(f"Saved vaccine: Комплексная")
                 elif data == 'vaccine_other':
-                    # Переходим в режим ввода другого типа прививки
                     state['waiting_for'] = 'other_vaccine'
-                    send_message(chat_id, f"{EMOJI['syringe']} <b>Укажите тип прививки</b>")
+                    send_message(chat_id, f"{EMOJI['syringe']} Укажите тип прививки")
                     return 'ok'
             elif step['kb'] == 'channel':
                 if data in ['sms', 'telegram']:
                     channel_map = {'sms': 'SMS', 'telegram': 'Telegram'}
                     state['data'][step['key']] = channel_map[data]
                     state['step'] += 1
-                    print(f"Saved channel: {state['data'][step['key']]}")
-            else:
-                print(f"Step {step['key']} doesn't expect callback data, ignoring")
-                return 'ok'
             
             # Следующий шаг или завершение
             if state['step'] >= len(STEPS):
-                print(f"Saving data for {chat_id}")
-                if save_to_sheet(state['data']):
-                    success_text = f"""{EMOJI['ok']} <b>Записано!</b>
-
-Питомец: <b>{state['data'].get('nickname', '')}</b>
-Прививка: {state['data'].get('vaccine_type', '')}
-Срок: {state['data'].get('term_months', '')} мес.
-
-{EMOJI['bell']} Напоминание придёт за 3 дня до окончания срока."""
-                    send_message(chat_id, success_text, main_inline_keyboard())
-                else:
-                    send_message(chat_id, f"{EMOJI['cross']} Ошибка записи. Попробуйте позже.", main_inline_keyboard())
-                user_states.pop(chat_id, None)
+                return finish_record(chat_id, state)
             else:
                 next_step = STEPS[state['step']]
                 kb = get_step_keyboard(next_step['kb'])
                 send_message(chat_id, next_step['ask'], kb)
-        else:
-            print(f"Step index {step_idx} out of range")
-    else:
-        print(f"No user state for chat {chat_id}, showing main menu")
-        send_message(chat_id, f"{EMOJI['paw']} Выберите действие:", main_inline_keyboard())
     
     return 'ok'
 
 def handle_input(chat_id, text, user):
     """Обработка текстового ввода"""
-    print(f"handle_input for {chat_id}: {text}")
-    
     state = user_states[chat_id]
-    step_idx = state['step']
     
-    # Проверяем, ждём ли мы специальный ввод (другое животное или другая прививка)
+    # Проверяем специальные режимы ввода
     if state.get('waiting_for') == 'other_animal':
         state['data']['animal_type'] = text
         state.pop('waiting_for')
         state['step'] += 1
-        print(f"Saved other animal: {text}")
         
-        # Переходим к следующему шагу
         if state['step'] >= len(STEPS):
             return finish_record(chat_id, state)
         else:
@@ -484,9 +553,7 @@ def handle_input(chat_id, text, user):
         state['data']['vaccine_type'] = text
         state.pop('waiting_for')
         state['step'] += 1
-        print(f"Saved other vaccine: {text}")
         
-        # Переходим к следующему шагу
         if state['step'] >= len(STEPS):
             return finish_record(chat_id, state)
         else:
@@ -495,6 +562,7 @@ def handle_input(chat_id, text, user):
             send_message(chat_id, next_step['ask'], kb)
         return 'ok'
     
+    step_idx = state['step']
     if step_idx >= len(STEPS):
         user_states.pop(chat_id, None)
         return 'ok'
@@ -528,7 +596,6 @@ def handle_input(chat_id, text, user):
     # Сохраняем
     state['data'][step['key']] = value
     state['step'] += 1
-    print(f"Saved {step['key']}: {value}, next step: {state['step']}")
     
     # Завершение или следующий вопрос
     if state['step'] >= len(STEPS):
@@ -541,12 +608,11 @@ def handle_input(chat_id, text, user):
     return 'ok'
 
 def finish_record(chat_id, state):
-    """Завершение записи и сохранение в таблицу"""
-    print(f"Saving final data for {chat_id}")
+    """Завершение записи"""
     if save_to_sheet(state['data']):
-        success_text = f"""{EMOJI['ok']} <b>Записано!</b>
+        success_text = f"""{EMOJI['ok']} Записано!
 
-Питомец: <b>{state['data'].get('nickname', '')}</b>
+Питомец: {state['data'].get('nickname', '')}
 Прививка: {state['data'].get('vaccine_type', '')}
 Срок: {state['data'].get('term_months', '')} мес.
 
@@ -558,11 +624,9 @@ def finish_record(chat_id, state):
     return 'ok'
 
 def answer_callback(callback_id):
-    """Ответ на callback query (убирает часики на кнопке)"""
     url = f'https://api.telegram.org/bot{TOKEN}/answerCallbackQuery'
     try:
-        response = requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
-        print(f"Callback answered: {response.status_code}")
+        requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
     except Exception as e:
         print(f"Error answering callback: {e}")
 
