@@ -71,7 +71,7 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
         print(f"Error sending message: {e}")
 
 def send_animation(chat_id, gif_path, caption=None, keyboard=None):
-    """Отправка GIF (анимации)"""
+    """Отправка GIF/MP4 (анимации)"""
     url = f'https://api.telegram.org/bot{TOKEN}/sendAnimation'
     
     with open(gif_path, 'rb') as gif_file:
@@ -96,15 +96,17 @@ def send_animation(chat_id, gif_path, caption=None, keyboard=None):
 
 # ============ INLINE КЛАВИАТУРЫ ============
 def main_inline_keyboard():
-    """Главное меню - inline кнопки под сообщением"""
+    """Главное меню - inline кнопки в 2 ряда"""
     return {
         'inline_keyboard': [
-            [{'text': f"{EMOJI['plus']} Новая запись", 'callback_data': 'new_record'}],
             [
-                {'text': f"{EMOJI['search']} Поиск", 'callback_data': 'search'},
-                {'text': f"{EMOJI['list']} Мои записи", 'callback_data': 'my_records'}
+                {'text': f"{EMOJI['plus']} Новая запись", 'callback_data': 'new_record'},
+                {'text': f"{EMOJI['search']} Поиск", 'callback_data': 'search'}
             ],
-            [{'text': f"{EMOJI['phone']} Контакты клиники", 'callback_data': 'contacts'}]
+            [
+                {'text': f"{EMOJI['list']} Мои записи", 'callback_data': 'my_records'},
+                {'text': f"{EMOJI['phone']} Контакты клиники", 'callback_data': 'contacts'}
+            ]
         ]
     }
 
@@ -242,6 +244,14 @@ def webhook():
         # /start
         if text == '/start':
             user_states.pop(chat_id, None)
+            
+            # Удаляем старую Reply Keyboard если есть
+            url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
+            requests.post(url, json={
+                'chat_id': chat_id,
+                'text': '⌛',
+                'reply_markup': {'remove_keyboard': True}
+            }, timeout=5)
             
             gif_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.mp4')
             
