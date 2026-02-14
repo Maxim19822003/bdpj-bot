@@ -66,12 +66,16 @@ def send_message(chat_id, text, keyboard=None, parse_mode='HTML'):
         'reply_markup': keyboard if keyboard else {'remove_keyboard': True}
     }
     try:
-        requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=payload, timeout=10)
+        print(f"send_message: chat={chat_id}, status={response.status_code}")
+        return response.json()
     except Exception as e:
         print(f"Error sending message: {e}")
+        return None
 
 def send_animation(chat_id, gif_path, caption=None, keyboard=None):
     """Отправка GIF/MP4 (анимации)"""
+    print(f"send_animation called: chat={chat_id}, file={gif_path}")
     url = f'https://api.telegram.org/bot{TOKEN}/sendAnimation'
     
     with open(gif_path, 'rb') as gif_file:
@@ -87,8 +91,7 @@ def send_animation(chat_id, gif_path, caption=None, keyboard=None):
         try:
             response = requests.post(url, files=files, data=data, timeout=10)
             result = response.json()
-            if not result.get('ok'):
-                print(f"Telegram API error: {result}")
+            print(f"send_animation result: {result.get('ok')}, error: {result.get('description') if not result.get('ok') else 'none'}")
             return result
         except Exception as e:
             print(f"Error sending animation: {e}")
@@ -223,11 +226,14 @@ def webhook():
     
     try:
         data = request.get_json(force=True)
+        print(f"Webhook received: {json.dumps(data, ensure_ascii=False)[:200]}")
+        
         if not data:
             return 'ok'
         
         # Обработка callback (нажатие на inline кнопку)
         if 'callback_query' in data:
+            print(f"Callback query detected!")
             return handle_callback(data['callback_query'])
         
         # Обработка обычного сообщения
@@ -241,19 +247,27 @@ def webhook():
         first_name = msg['from'].get('first_name', 'сотрудник')
         user = f'@{username}' if username else first_name
         
+        print(f"Message from {user}: {text}")
+        
         # /start
         if text == '/start':
+            print(f"Processing /start for chat {chat_id}")
             user_states.pop(chat_id, None)
             
-            # Удаляем старую Reply Keyboard если есть
+            # Удаляем старую Reply Keyboard полностью
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
-            requests.post(url, json={
-                'chat_id': chat_id,
-                'text': '⌛',
-                'reply_markup': {'remove_keyboard': True}
-            }, timeout=5)
+            try:
+                remove_result = requests.post(url, json={
+                    'chat_id': chat_id,
+                    'text': '⌛',
+                    'reply_markup': {'remove_keyboard': True}
+                }, timeout=5)
+                print(f"Remove keyboard result: {remove_result.status_code}")
+            except Exception as e:
+                print(f"Error removing keyboard: {e}")
             
             gif_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.mp4')
+            print(f"GIF path: {gif_path}, exists: {os.path.exists(gif_path)}")
             
             welcome_caption = f"""{EMOJI['logo']} <b>БДПЖ Боровск</b>
 
@@ -262,7 +276,8 @@ def webhook():
 Выберите действие 👇"""
             
             if os.path.exists(gif_path):
-                send_animation(chat_id, gif_path, welcome_caption, main_inline_keyboard())
+                result = send_animation(chat_id, gif_path, welcome_caption, main_inline_keyboard())
+                print(f"Animation sent: {result is not None}")
             else:
                 send_message(chat_id, welcome_caption, main_inline_keyboard())
             return 'ok'
@@ -281,7 +296,7 @@ def webhook():
         send_message(chat_id, f"{EMOJI['paw']} Нажмите кнопку в меню выше или отправьте /start", main_inline_keyboard())
         
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error in webhook: {e}")
         import traceback
         traceback.print_exc()
     
@@ -289,17 +304,22 @@ def webhook():
 
 def handle_callback(callback):
     """Обработка нажатий на inline кнопки"""
+    print(f"handle_callback started")
+    
     chat_id = callback['message']['chat']['id']
     data = callback['data']
     username = callback['from'].get('username', '')
     first_name = callback['from'].get('first_name', 'сотрудник')
     user = f'@{username}' if username else first_name
     
+    print(f"Callback from {user}: {data}")
+    
     # Ответ на callback (убирает "часики" на кнопке)
     answer_callback(callback['id'])
     
     # Главное меню
     if data == 'new_record':
+        print(f"Starting new record for {chat_id}")
         user_states[chat_id] = {
             'step': 0,
             'data': {
@@ -313,25 +333,30 @@ def handle_callback(callback):
         return 'ok'
     
     if data == 'search':
+        print(f"Search requested")
         send_message(chat_id, f"{EMOJI['search']} <b>Поиск</b>\n\nВведите телефон или кличку:")
         return 'ok'
     
     if data == 'my_records':
+        print(f"My records requested")
         send_message(chat_id, f"{EMOJI['calendar']} Сегодня: 3 приёма\n{EMOJI['urgent']} Срочно: 2\n{EMOJI['warning']} Скоро: 5")
         return 'ok'
     
     if data == 'contacts':
+        print(f"Contacts requested")
         send_message(chat_id, f"{EMOJI['paw']} <b>Ветеринарная клиника</b>\n\n📞 +7 (XXX) XXX-XX-XX\n🕐 Пн-Пт: 9:00-18:00\n🕐 Сб: 9:00-14:00")
         return 'ok'
     
     # Отмена
     if data == 'cancel':
+        print(f"Cancel requested")
         user_states.pop(chat_id, None)
         send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_inline_keyboard())
         return 'ok'
     
     # Обработка шагов опроса
     if chat_id in user_states:
+        print(f"Processing step for {chat_id}")
         state = user_states[chat_id]
         step_idx = state['step']
         
@@ -360,6 +385,7 @@ def handle_callback(callback):
             
             # Следующий шаг или завершение
             if state['step'] >= len(STEPS):
+                print(f"Saving data for {chat_id}")
                 if save_to_sheet(state['data']):
                     success_text = f"""{EMOJI['ok']} <b>Записано!</b>
 
@@ -381,6 +407,8 @@ def handle_callback(callback):
 
 def handle_input(chat_id, text, user):
     """Обработка текстового ввода"""
+    print(f"handle_input for {chat_id}: {text}")
+    
     state = user_states[chat_id]
     step_idx = state['step']
     
@@ -420,6 +448,7 @@ def handle_input(chat_id, text, user):
     
     # Завершение или следующий вопрос
     if state['step'] >= len(STEPS):
+        print(f"Saving final data for {chat_id}")
         if save_to_sheet(state['data']):
             success_text = f"""{EMOJI['ok']} <b>Записано!</b>
 
@@ -454,4 +483,3 @@ def health():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
-
