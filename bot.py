@@ -80,7 +80,7 @@ def get_all_records(sheet_name='Ввод_бот'):
 
 # ============ ПОИСК ============
 def search_all_sheets(query):
-    """Поиск по всем листам таблицы"""
+    """Глобальный поиск по всем полям таблицы"""
     query_lower = query.lower().strip()
     results = []
     
@@ -93,7 +93,7 @@ def search_all_sheets(query):
         record_str = json.dumps(record, ensure_ascii=False).lower()
         
         if query_lower in record_str:
-            print(f"DEBUG: Match at row {idx + 2}: {record.get('Кличка', 'NO_NICKNAME')}")
+            print(f"DEBUG: Match at row {idx + 2}")
             results.append({
                 'source': 'Ввод_бот',
                 'data': record
@@ -105,33 +105,60 @@ def search_all_sheets(query):
 def format_search_results(results):
     """Форматировать результаты поиска"""
     if not results:
-        return f"{EMOJI['warning']} Ничего не найдено\n\nПопробуйте другой запрос или проверьте правильность написания."
+        return f"{EMOJI['warning']} Ничего не найдено\n\nПопробуйте другой запрос."
     
     text = f"{EMOJI['search']} Найдено результатов: {len(results)}\n\n"
     
     for i, result in enumerate(results[:5], 1):
         record = result['data']
         
-        # Пробуем разные варианты названий полей ФИО
-        fio = record.get('ФИО', record.get('Имя_владельца', record.get('Имя владельца', 'Не указано')))
-        phone = record.get('Телефон', 'Не указан')
+        # Получаем все возможные поля
+        fio = record.get('ФИО', 'Не указано')
+        phone = record.get('Телефон', '')
+        telegram = record.get('Telegram', '')
+        address = record.get('Адрес', '')
         pet = record.get('Кличка', 'Не указано')
         animal_type = record.get('Вид_животного', '')
+        sex = record.get('Пол', '')
+        age = record.get('Возраст_или_ДР', '')
         vaccine = record.get('Тип_прививки', '')
-        date = record.get('Дата_прививки', '')
+        vaccine_date = record.get('Дата_прививки', '')
+        term = record.get('Срок_мес', '')
+        channel = record.get('Канал', '')
         status = record.get('Статус_обработки', 'Новый')
         
+        # Формируем вывод всех найденных данных
         text += f"{i}. {EMOJI['user']} {fio}\n"
-        text += f"   {EMOJI['phone']} {phone}\n"
+        
+        if phone:
+            text += f"   {EMOJI['phone']} {phone}\n"
+        if telegram:
+            text += f"   Telegram: {telegram}\n"
+        if address:
+            text += f"   {EMOJI['home']} {address}\n"
+        
         text += f"   {EMOJI['paw']} {pet}"
         if animal_type:
-            text += f" ({animal_type})"
+            text += f" ({animal_type}"
+            if sex:
+                text += f", {sex}"
+            text += ")"
         text += "\n"
+        
+        if age:
+            text += f"   {EMOJI['calendar']} {age}\n"
+        
         if vaccine:
             text += f"   {EMOJI['syringe']} {vaccine}"
-            if date:
-                text += f" ({date})"
+            if vaccine_date:
+                text += f" ({vaccine_date})"
+            if term:
+                text += f" — {term} мес."
             text += "\n"
+        
+        if channel:
+            text += f"   {EMOJI['bell']} Канал: {channel}\n"
+        
         text += f"   Статус: {status}\n\n"
     
     if len(results) > 5:
@@ -466,7 +493,7 @@ def handle_callback(callback):
     
     if data == 'search':
         user_states[chat_id] = {'mode': 'search'}
-        send_message(chat_id, f"{EMOJI['search']} Поиск\n\nВведите телефон или кличку:")
+        send_message(chat_id, f"{EMOJI['search']} Поиск")
         return 'ok'
     
     if data == 'my_records':
