@@ -43,7 +43,7 @@ EMOJI = {
 }
 
 # ============ GOOGLE SHEETS ============
-def get_sheet():
+def get_client():
     scope = ['https://spreadsheets.google.com/feeds', 
              'https://www.googleapis.com/auth/drive']
     
@@ -56,17 +56,130 @@ def get_sheet():
     else:
         creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
     
-    client = gspread.authorize(creds)
-    return client.open_by_key(SHEET_ID).worksheet('Ввод_бот')
+    return gspread.authorize(creds)
 
-def get_all_records():
-    """Получить все записи из таблицы"""
+def get_sheet(sheet_name='Ввод_бот'):
+    """Получить конкретный лист"""
     try:
-        sheet = get_sheet()
-        return sheet.get_all_records()
+        client = get_client()
+        return client.open_by_key(SHEET_ID).worksheet(sheet_name)
     except Exception as e:
-        print(f"Error getting records: {e}")
+        print(f"Error getting sheet {sheet_name}: {e}")
+        return None
+
+def get_all_records(sheet_name='Ввод_бот'):
+    """Получить все записи из указанного листа"""
+    try:
+        sheet = get_sheet(sheet_name)
+        if sheet:
+            return sheet.get_all_records()
         return []
+    except Exception as e:
+        print(f"Error getting records from {sheet_name}: {e}")
+        return []
+
+# ============ ПОИСК ============
+def search_all_sheets(query):
+    """Поиск по всем листам таблицы"""
+    query_lower = query.lower().strip()
+    results = []
+    
+    # Ищем в листе Ввод_бот
+    records = get_all_records('Ввод_бот')
+    print(f"DEBUG: Total records in Ввод_бот: {len(records)}")
+    
+    for idx, record in enumerate(records):
+        # Преобразуем всю запись в строку и ищем там
+        record_str = json.dumps(record, ensure_ascii=False).lower()
+        
+        if query_lower in record_str:
+            print(f"DEBUG: Match at row {idx + 2}: {record.get('Кличка', 'NO_NICKNAME')}")
+            results.append({
+                'source': 'Ввод_бот',
+                'data': record
+            })
+    
+    print(f"DEBUG: Total matches: {len(results)}")
+    return results
+
+def format_search_results(results):
+    """Форматировать результаты поиска"""
+    if not results:
+        return f"{EMOJI['warning']} Ничего не найдено\n\nПопробуйте другой запрос или проверьте правильность написания."
+    
+    text = f"{EMOJI['search']} Найдено результатов: {len(results)}\n\n"
+    
+    for i, result in enumerate(results[:5], 1):
+        record = result['data']
+        
+        # Получаем поля с подчёркиванием
+        fio = record.get('Имя_владельца', 'Не указано')
+        phone = record.get('Телефон', 'Не указан')
+        pet = record.get('Кличка', 'Не указано')
+        animal_type = record.get('Вид_животного', '')
+        vaccine = record.get('Тип_прививки', '')
+        date = record.get('Дата_прививки', '')
+        status = record.get('Статус_обработки', 'Новый')
+        
+        text += f"{i}. {EMOJI['user']} {fio}\n"
+        text += f"   {EMOJI['phone']} {phone}\n"
+        text += f"   {EMOJI['paw']} {pet}"
+        if animal_type:
+            text += f" ({animal_type})"
+        text += "\n"
+        if vaccine:
+            text += f"   {EMOJI['syringe']} {vaccine}"
+            if date:
+                text += f" ({date})"
+            text += "\n"
+        text += f"   Статус: {status}\n\n"
+    
+    if len(results) > 5:
+        text += f"... и ещё {len(results) - 5} результатов"
+    
+    return text
+
+# ============ МОИ ЗАПИСИ ============
+def get_my_records(user_identifier):
+    """Получить записи пользователя за сегодня из Ввод_бот"""
+    records = get_all_records('Ввод_бот')
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    my_records = []
+    for record in records:
+        staff = str(record.get('staff_tg', '')).lower()
+        user_id = user_identifier.lower().replace('@', '')
+        
+        if staff == user_identifier.lower() or staff == f"@{user_id}" or user_id in staff:
+            record_date = str(record.get('Дата_прививки', ''))
+            if today in record_date:
+                my_records.append(record)
+    
+    return my_records
+
+def format_records_summary(records):
+    """Форматировать сводку записей"""
+    if not records:
+        return f"{EMOJI['calendar']} Сегодня записей нет"
+    
+    total = len(records)
+    return f"{EMOJI['calendar']} Сегодня: {total} приёмов\n{EMOJI['urgent']} Срочно: 0\n{EMOJI['warning']} Скоро: 0"
+
+def get_records_details(records):
+    """Получить детали записей"""
+    if not records:
+        return "Записей пока нет"
+    
+    details = []
+    for i, record in enumerate(records[:10], 1):
+        pet = record.get('Кличка', 'Не указано')
+        animal = record.get('Вид_животного', '')
+        vaccine = record.get('Тип_прививки', '')
+        date = record.get('Дата_прививки', '')
+        
+        details.append(f"{i}. {pet} ({animal}) - {vaccine}, {date}")
+    
+    return "\n".join(details)
 
 # ============ TELEGRAM API ============
 def send_message(chat_id, text, keyboard=None, parse_mode=None):
@@ -82,15 +195,12 @@ def send_message(chat_id, text, keyboard=None, parse_mode=None):
     try:
         response = requests.post(url, json=payload, timeout=10)
         print(f"send_message: chat={chat_id}, status={response.status_code}")
-        if not response.ok:
-            print(f"Error response: {response.text}")
         return response.json()
     except Exception as e:
         print(f"Error sending message: {e}")
         return None
 
 def send_animation(chat_id, gif_path, caption=None, keyboard=None):
-    print(f"send_animation called: chat={chat_id}, file={gif_path}")
     url = f'https://api.telegram.org/bot{TOKEN}/sendAnimation'
     
     with open(gif_path, 'rb') as gif_file:
@@ -104,9 +214,7 @@ def send_animation(chat_id, gif_path, caption=None, keyboard=None):
         
         try:
             response = requests.post(url, files=files, data=data, timeout=10)
-            result = response.json()
-            print(f"send_animation result: {result.get('ok')}")
-            return result
+            return response.json()
         except Exception as e:
             print(f"Error sending animation: {e}")
             return None
@@ -215,104 +323,10 @@ def get_step_keyboard(step_type):
         return vaccine_type_inline_keyboard()
     return None
 
-# ============ ЛОГИКА МОИХ ЗАПИСЕЙ ============
-def get_my_records(user_identifier):
-    """Получить записи пользователя за сегодня"""
-    records = get_all_records()
-    today = datetime.now().strftime('%Y-%m-%d')
-    
-    my_records = []
-    for record in records:
-        # Ищем по имени пользователя (staff_tg) или username
-        if record.get('staff_tg') == user_identifier or record.get('staff_tg') == f"@{user_identifier}":
-            # Проверяем дату (если есть колонка date_visit)
-            record_date = record.get('date_visit', '')
-            if str(record_date) == today:
-                my_records.append(record)
-    
-    return my_records
-
-def format_records_summary(records):
-    """Форматировать записи для вывода"""
-    if not records:
-        return f"{EMOJI['calendar']} Сегодня записей нет"
-    
-    total = len(records)
-    urgent = 0  # Можно добавить логику подсчета срочных
-    soon = 0    # Можно добавить логику подсчета "скоро"
-    
-    return f"{EMOJI['calendar']} Сегодня: {total} приёмов\n{EMOJI['urgent']} Срочно: {urgent}\n{EMOJI['warning']} Скоро: {soon}"
-
-def get_records_details(records):
-    """Получить детали записей"""
-    if not records:
-        return "Записей пока нет"
-    
-    details = []
-    for i, record in enumerate(records[:10], 1):  # Показываем последние 10
-        pet = record.get('nickname', 'Не указано')
-        animal = record.get('animal_type', '')
-        vaccine = record.get('vaccine_type', '')
-        date = record.get('vaccine_date', '')
-        
-        details.append(f"{i}. {pet} ({animal}) - {vaccine}, {date}")
-    
-    return "\n".join(details)
-
-# ============ ЛОГИКА ПОИСКА ============
-def search_records(query):
-    """Поиск по телефону или кличке"""
-    records = get_all_records()
-    results = []
-    
-    query_lower = query.lower().strip()
-    
-    for record in records:
-        phone = str(record.get('phone', '')).lower()
-        nickname = str(record.get('nickname', '')).lower()
-        fio = str(record.get('fio', '')).lower()
-        
-        # Ищем точное или частичное совпадение
-        if (query_lower in phone or 
-            query_lower in nickname or 
-            query_lower in fio or
-            phone in query_lower or
-            nickname in query_lower):
-            results.append(record)
-    
-    return results
-
-def format_search_results(results):
-    """Форматировать результаты поиска"""
-    if not results:
-        return f"{EMOJI['warning']} Ничего не найдено\n\nПопробуйте другой запрос или проверьте правильность написания."
-    
-    text = f"{EMOJI['search']} Найдено записей: {len(results)}\n\n"
-    
-    for i, record in enumerate(results[:5], 1):  # Показываем первые 5
-        fio = record.get('fio', 'Не указано')
-        phone = record.get('phone', 'Не указан')
-        pet = record.get('nickname', 'Не указано')
-        animal = record.get('animal_type', '')
-        vaccine = record.get('vaccine_type', '')
-        date = record.get('vaccine_date', '')
-        status = record.get('status', 'Новый')
-        
-        text += f"{i}. {EMOJI['user']} {fio}\n"
-        text += f"   {EMOJI['phone']} {phone}\n"
-        text += f"   {EMOJI['paw']} {pet} ({animal})\n"
-        text += f"   {EMOJI['syringe']} {vaccine} ({date})\n"
-        text += f"   Статус: {status}\n\n"
-    
-    if len(results) > 5:
-        text += f"... и ещё {len(results) - 5} записей"
-    
-    return text
-
 # ============ СОХРАНЕНИЕ ============
 def save_to_sheet(data):
     try:
-        sheet = get_sheet()
+        sheet = get_sheet('Ввод_бот')
         row = [
             data.get('date_visit', ''),
             data.get('staff_tg', ''),
@@ -353,7 +367,6 @@ def webhook():
         
         # Обработка callback
         if 'callback_query' in data:
-            print(f"Callback query detected! Data: {data['callback_query'].get('data')}")
             return handle_callback(data['callback_query'])
         
         # Обработка обычного сообщения
@@ -371,7 +384,6 @@ def webhook():
         
         # /start
         if text == '/start':
-            print(f"Processing /start for chat {chat_id}")
             user_states.pop(chat_id, None)
             
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
@@ -404,14 +416,15 @@ def webhook():
             send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_inline_keyboard())
             return 'ok'
         
-        # Обработка поиска (если пользователь в режиме поиска)
+        # Обработка поиска
         if chat_id in user_states and user_states[chat_id].get('mode') == 'search':
             del user_states[chat_id]['mode']
-            results = search_records(text)
+            print(f"Searching for: {text}")
+            results = search_all_sheets(text)
             send_message(chat_id, format_search_results(results), main_inline_keyboard())
             return 'ok'
         
-        # Проверка состояния (ввод данных)
+        # Проверка состояния
         if chat_id in user_states:
             return handle_input(chat_id, text, user)
         
@@ -452,13 +465,11 @@ def handle_callback(callback):
         return 'ok'
     
     if data == 'search':
-        # Устанавливаем режим поиска
         user_states[chat_id] = {'mode': 'search'}
         send_message(chat_id, f"{EMOJI['search']} Поиск\n\nВведите телефон или кличку:")
         return 'ok'
     
     if data == 'my_records':
-        # Получаем реальные записи пользователя
         records = get_my_records(user)
         summary = format_records_summary(records)
         details = get_records_details(records)
