@@ -382,22 +382,29 @@ def save_to_sheet(data):
 # ============ ОБРАБОТКА ============
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    print("=" * 50)
+    print("WEBHOOK CALLED")
+    
     if SECRET and request.args.get('secret') != SECRET:
+        print(f"Secret check failed. Expected: {SECRET}, got: {request.args.get('secret')}")
         return 'ok'
     
     try:
         data = request.get_json(force=True)
-        print(f"Webhook received: {json.dumps(data, ensure_ascii=False)[:500]}")
+        print(f"Received data: {json.dumps(data, ensure_ascii=False)}")
         
         if not data:
+            print("Empty data received")
             return 'ok'
         
         # Обработка callback
         if 'callback_query' in data:
+            print("Processing callback_query")
             return handle_callback(data['callback_query'])
         
         # Обработка обычного сообщения
         if 'message' not in data:
+            print(f"No 'message' in data. Keys: {list(data.keys())}")
             return 'ok'
         
         msg = data['message']
@@ -407,62 +414,68 @@ def webhook():
         first_name = msg['from'].get('first_name', 'сотрудник')
         user = f'@{username}' if username else first_name
         
-        print(f"Message from {user}: {text}")
+        print(f"Message from {user} (chat_id: {chat_id}): '{text}'")
         
         # /start
         if text == '/start':
+            print("Processing /start command")
             user_states.pop(chat_id, None)
             
+            # Убираем клавиатуру
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
             try:
-                requests.post(url, json={
+                resp = requests.post(url, json={
                     'chat_id': chat_id,
                     'text': '⌛',
                     'reply_markup': {'remove_keyboard': True}
                 }, timeout=5)
+                print(f"Remove keyboard response: {resp.status_code}")
             except Exception as e:
                 print(f"Error removing keyboard: {e}")
             
-            gif_path = os.path.join(os.path.dirname(__file__), 'images', 'logo.mp4')
-            
+            # Отправляем приветствие
             welcome_caption = f"""{EMOJI['logo']} БДПЖ Боровск
 
 База данных привитых животных
 
 Выберите действие 👇"""
             
-            if os.path.exists(gif_path):
-                send_animation(chat_id, gif_path, welcome_caption, main_inline_keyboard())
-            else:
-                send_message(chat_id, welcome_caption, main_inline_keyboard())
+            print(f"Sending welcome message to {chat_id}")
+            result = send_message(chat_id, welcome_caption, main_inline_keyboard())
+            print(f"Welcome message result: {result}")
             return 'ok'
         
         # Отмена
         if text == '/cancel':
+            print("Processing /cancel command")
             user_states.pop(chat_id, None)
             send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_inline_keyboard())
             return 'ok'
         
         # Обработка поиска
         if chat_id in user_states and user_states[chat_id].get('mode') == 'search':
+            print(f"Processing search query: {text}")
             del user_states[chat_id]['mode']
-            print(f"Searching for: {text}")
             results = search_all_sheets(text)
+            print(f"Search results: {len(results)} found")
             send_message(chat_id, format_search_results(results), main_inline_keyboard())
             return 'ok'
         
-        # Проверка состояния
+        # Проверка состояния (опрос)
         if chat_id in user_states:
+            print(f"Processing input for state: {user_states[chat_id]}")
             return handle_input(chat_id, text, user)
         
-        # Если нет состояния
+        # Если нет состояния — показываем меню
+        print("No state found, showing main menu")
         send_message(chat_id, f"{EMOJI['paw']} Нажмите кнопку в меню выше или отправьте /start", main_inline_keyboard())
         
     except Exception as e:
-        print(f"Error in webhook: {e}")
+        print(f"CRITICAL ERROR in webhook: {e}")
         import traceback
         traceback.print_exc()
     
+    print("=" * 50)
     return 'ok'
 
 def handle_callback(callback):
@@ -668,13 +681,12 @@ def answer_callback(callback_id):
     except Exception as e:
         print(f"Error answering callback: {e}")
 
+# ============ WEBHOOK SETUP ============
 def set_webhook():
     """Устанавливает вебхук в Telegram при старте сервера"""
-    # Render даёт этот URL автоматически, или используем свой
     render_url = os.environ.get('RENDER_EXTERNAL_URL')
     
     if not render_url:
-        # Fallback: если переменная не задана, используем домен из скриншота
         render_url = 'https://bdpj-bot.onrender.com'
     
     webhook_url = f"{render_url}/webhook"
