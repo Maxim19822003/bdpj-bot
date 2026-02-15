@@ -230,24 +230,29 @@ def send_message(chat_id, text, keyboard=None, parse_mode=None):
         print(f"Error sending message: {e}", flush=True)
         return None
 
-def send_animation(chat_id, gif_path, caption=None, keyboard=None):
+def send_animation(chat_id, animation_path, caption=None, keyboard=None):
+    """Отправить анимацию (GIF/MP4)"""
     url = f'https://api.telegram.org/bot{TOKEN}/sendAnimation'
     
-    with open(gif_path, 'rb') as gif_file:
-        files = {'animation': gif_file}
-        data = {
-            'chat_id': chat_id,
-            'caption': caption or '',
-        }
-        if keyboard:
-            data['reply_markup'] = json.dumps(keyboard)
-        
-        try:
-            response = requests.post(url, files=files, data=data, timeout=10)
+    try:
+        with open(animation_path, 'rb') as animation_file:
+            files = {'animation': animation_file}
+            data = {
+                'chat_id': chat_id,
+                'caption': caption or '',
+            }
+            if keyboard:
+                data['reply_markup'] = json.dumps(keyboard)
+            
+            response = requests.post(url, files=files, data=data, timeout=30)
+            print(f"send_animation: chat={chat_id}, status={response.status_code}", flush=True)
             return response.json()
-        except Exception as e:
-            print(f"Error sending animation: {e}", flush=True)
-            return None
+    except FileNotFoundError:
+        print(f"Error: Animation file not found: {animation_path}", flush=True)
+        return None
+    except Exception as e:
+        print(f"Error sending animation: {e}", flush=True)
+        return None
 
 # ============ INLINE КЛАВИАТУРЫ ============
 def main_inline_keyboard():
@@ -389,11 +394,6 @@ def webhook():
     print("=" * 50, flush=True)
     print("WEBHOOK CALLED", flush=True)
     
-    # Проверка секрета отключена (можно включить позже)
-    # if SECRET and request.args.get('secret') != SECRET:
-    #     print(f"Secret check failed", flush=True)
-    #     return 'ok'
-    
     try:
         data = request.get_json(force=True)
         print(f"Received data: {json.dumps(data, ensure_ascii=False)}", flush=True)
@@ -423,17 +423,24 @@ def webhook():
             print("Processing /start command", flush=True)
             user_states.pop(chat_id, None)
             
+            # Отправляем песочные часы
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
             try:
                 resp = requests.post(url, json={
                     'chat_id': chat_id,
-                    'text': '⌛',
+                    'text': '⌛️',
                     'reply_markup': {'remove_keyboard': True}
                 }, timeout=5)
                 print(f"Remove keyboard response: {resp.status_code}", flush=True)
             except Exception as e:
                 print(f"Error removing keyboard: {e}", flush=True)
             
+            # Отправляем logo.mp4
+            logo_path = 'images/logo.mp4'
+            print(f"Sending logo animation from {logo_path}", flush=True)
+            send_animation(chat_id, logo_path)
+            
+            # Отправляем приветственное сообщение с меню
             welcome_caption = f"""{EMOJI['logo']} БДПЖ Боровск
 
 База данных привитых животных
@@ -677,7 +684,6 @@ def set_webhook():
     if not render_url:
         render_url = 'https://bdpj-bot.onrender.com'
     
-    # Исправлено: webhook_url вне блока if
     webhook_url = f"{render_url}/webhook?secret={SECRET}" if SECRET else f"{render_url}/webhook"
     
     api_url = f'https://api.telegram.org/bot{TOKEN}/setWebhook'
@@ -705,4 +711,3 @@ if __name__ == '__main__':
     
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
-
