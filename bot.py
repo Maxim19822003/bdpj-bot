@@ -668,10 +668,40 @@ def answer_callback(callback_id):
     except Exception as e:
         print(f"Error answering callback: {e}")
 
-@app.route('/')
+def set_webhook():
+    """Устанавливает вебхук в Telegram при старте сервера"""
+    # Render даёт этот URL автоматически, или используем свой
+    render_url = os.environ.get('RENDER_EXTERNAL_URL')
+    
+    if not render_url:
+        # Fallback: если переменная не задана, используем домен из скриншота
+        render_url = 'https://bdpj-bot.onrender.com'
+    
+    webhook_url = f"{render_url}/webhook"
+    
+    api_url = f'https://api.telegram.org/bot{TOKEN}/setWebhook'
+    payload = {
+        'url': webhook_url,
+        'drop_pending_updates': True
+    }
+    
+    try:
+        response = requests.post(api_url, json=payload, timeout=10)
+        result = response.json()
+        print(f"✅ Webhook set: {webhook_url}")
+        print(f"Response: {result}")
+        return result.get('ok', False)
+    except Exception as e:
+        print(f"❌ Error setting webhook: {e}")
+        return False
+
 def health():
     return f"{EMOJI['logo']} БДПЖ Боровск - Бот работает!"
 
 if __name__ == '__main__':
+    # Устанавливаем вебхук перед запуском сервера
+    set_webhook()
+    
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
+
