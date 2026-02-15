@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import sys
 from datetime import datetime
 from flask import Flask, request
 import gspread
@@ -9,11 +10,17 @@ import requests
 
 app = Flask(__name__)
 
+print("BOT STARTING", flush=True)
+
 # ============ НАСТРОЙКИ ============
 TOKEN = os.environ['BOT_TOKEN']
 SECRET = os.environ.get('WEBHOOK_SECRET', '')
 SHEET_ID = os.environ['SHEET_ID']
 GOOGLE_CREDS = os.environ.get('GOOGLE_CREDS_JSON', '')
+
+print(f"TOKEN loaded: {bool(TOKEN)}", flush=True)
+print(f"SHEET_ID loaded: {bool(SHEET_ID)}", flush=True)
+print(f"GOOGLE_CREDS loaded: {bool(GOOGLE_CREDS)}", flush=True)
 
 # Эмодзи стиль
 EMOJI = {
@@ -64,7 +71,7 @@ def get_sheet(sheet_name='Ввод_бот'):
         client = get_client()
         return client.open_by_key(SHEET_ID).worksheet(sheet_name)
     except Exception as e:
-        print(f"Error getting sheet {sheet_name}: {e}")
+        print(f"Error getting sheet {sheet_name}: {e}", flush=True)
         return None
 
 def get_all_records(sheet_name='Ввод_бот'):
@@ -75,7 +82,7 @@ def get_all_records(sheet_name='Ввод_бот'):
             return sheet.get_all_records()
         return []
     except Exception as e:
-        print(f"Error getting records from {sheet_name}: {e}")
+        print(f"Error getting records from {sheet_name}: {e}", flush=True)
         return []
 
 # ============ ПОИСК ============
@@ -84,22 +91,20 @@ def search_all_sheets(query):
     query_lower = query.lower().strip()
     results = []
     
-    # Ищем в листе Ввод_бот
     records = get_all_records('Ввод_бот')
-    print(f"DEBUG: Total records in Ввод_бот: {len(records)}")
+    print(f"DEBUG: Total records in Ввод_бот: {len(records)}", flush=True)
     
     for idx, record in enumerate(records):
-        # Преобразуем всю запись в строку и ищем там
         record_str = json.dumps(record, ensure_ascii=False).lower()
         
         if query_lower in record_str:
-            print(f"DEBUG: Match at row {idx + 2}")
+            print(f"DEBUG: Match at row {idx + 2}", flush=True)
             results.append({
                 'source': 'Ввод_бот',
                 'data': record
             })
     
-    print(f"DEBUG: Total matches: {len(results)}")
+    print(f"DEBUG: Total matches: {len(results)}", flush=True)
     return results
 
 def format_search_results(results):
@@ -112,7 +117,6 @@ def format_search_results(results):
     for i, result in enumerate(results[:5], 1):
         record = result['data']
         
-        # Получаем все возможные поля
         fio = record.get('ФИО', 'Не указано')
         phone = record.get('Телефон', '')
         telegram = record.get('Telegram', '')
@@ -127,7 +131,6 @@ def format_search_results(results):
         channel = record.get('Канал', '')
         status = record.get('Статус_обработки', 'Новый')
         
-        # Формируем вывод всех найденных данных
         text += f"{i}. {EMOJI['user']} {fio}\n"
         
         if phone:
@@ -221,10 +224,10 @@ def send_message(chat_id, text, keyboard=None, parse_mode=None):
     
     try:
         response = requests.post(url, json=payload, timeout=10)
-        print(f"send_message: chat={chat_id}, status={response.status_code}")
+        print(f"send_message: chat={chat_id}, status={response.status_code}", flush=True)
         return response.json()
     except Exception as e:
-        print(f"Error sending message: {e}")
+        print(f"Error sending message: {e}", flush=True)
         return None
 
 def send_animation(chat_id, gif_path, caption=None, keyboard=None):
@@ -243,7 +246,7 @@ def send_animation(chat_id, gif_path, caption=None, keyboard=None):
             response = requests.post(url, files=files, data=data, timeout=10)
             return response.json()
         except Exception as e:
-            print(f"Error sending animation: {e}")
+            print(f"Error sending animation: {e}", flush=True)
             return None
 
 # ============ INLINE КЛАВИАТУРЫ ============
@@ -376,35 +379,34 @@ def save_to_sheet(data):
         sheet.append_row(row)
         return True
     except Exception as e:
-        print(f"Error saving: {e}")
+        print(f"Error saving: {e}", flush=True)
         return False
 
 # ============ ОБРАБОТКА ============
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    print("=" * 50)
-    print("WEBHOOK CALLED")
+    sys.stdout.flush()
+    print("=" * 50, flush=True)
+    print("WEBHOOK CALLED", flush=True)
     
     if SECRET and request.args.get('secret') != SECRET:
-        print(f"Secret check failed. Expected: {SECRET}, got: {request.args.get('secret')}")
+        print(f"Secret check failed", flush=True)
         return 'ok'
     
     try:
         data = request.get_json(force=True)
-        print(f"Received data: {json.dumps(data, ensure_ascii=False)}")
+        print(f"Received data: {json.dumps(data, ensure_ascii=False)}", flush=True)
         
         if not data:
-            print("Empty data received")
+            print("Empty data received", flush=True)
             return 'ok'
         
-        # Обработка callback
         if 'callback_query' in data:
-            print("Processing callback_query")
+            print("Processing callback_query", flush=True)
             return handle_callback(data['callback_query'])
         
-        # Обработка обычного сообщения
         if 'message' not in data:
-            print(f"No 'message' in data. Keys: {list(data.keys())}")
+            print(f"No 'message' in data. Keys: {list(data.keys())}", flush=True)
             return 'ok'
         
         msg = data['message']
@@ -414,14 +416,12 @@ def webhook():
         first_name = msg['from'].get('first_name', 'сотрудник')
         user = f'@{username}' if username else first_name
         
-        print(f"Message from {user} (chat_id: {chat_id}): '{text}'")
+        print(f"Message from {user} (chat_id: {chat_id}): '{text}'", flush=True)
         
-        # /start
         if text == '/start':
-            print("Processing /start command")
+            print("Processing /start command", flush=True)
             user_states.pop(chat_id, None)
             
-            # Убираем клавиатуру
             url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
             try:
                 resp = requests.post(url, json={
@@ -429,53 +429,48 @@ def webhook():
                     'text': '⌛',
                     'reply_markup': {'remove_keyboard': True}
                 }, timeout=5)
-                print(f"Remove keyboard response: {resp.status_code}")
+                print(f"Remove keyboard response: {resp.status_code}", flush=True)
             except Exception as e:
-                print(f"Error removing keyboard: {e}")
+                print(f"Error removing keyboard: {e}", flush=True)
             
-            # Отправляем приветствие
             welcome_caption = f"""{EMOJI['logo']} БДПЖ Боровск
 
 База данных привитых животных
 
 Выберите действие 👇"""
             
-            print(f"Sending welcome message to {chat_id}")
+            print(f"Sending welcome message to {chat_id}", flush=True)
             result = send_message(chat_id, welcome_caption, main_inline_keyboard())
-            print(f"Welcome message result: {result}")
+            print(f"Welcome message result: {result}", flush=True)
             return 'ok'
         
-        # Отмена
         if text == '/cancel':
-            print("Processing /cancel command")
+            print("Processing /cancel command", flush=True)
             user_states.pop(chat_id, None)
             send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_inline_keyboard())
             return 'ok'
         
-        # Обработка поиска
         if chat_id in user_states and user_states[chat_id].get('mode') == 'search':
-            print(f"Processing search query: {text}")
+            print(f"Processing search query: {text}", flush=True)
             del user_states[chat_id]['mode']
             results = search_all_sheets(text)
-            print(f"Search results: {len(results)} found")
+            print(f"Search results: {len(results)} found", flush=True)
             send_message(chat_id, format_search_results(results), main_inline_keyboard())
             return 'ok'
         
-        # Проверка состояния (опрос)
         if chat_id in user_states:
-            print(f"Processing input for state: {user_states[chat_id]}")
+            print(f"Processing input for state: {user_states[chat_id]}", flush=True)
             return handle_input(chat_id, text, user)
         
-        # Если нет состояния — показываем меню
-        print("No state found, showing main menu")
+        print("No state found, showing main menu", flush=True)
         send_message(chat_id, f"{EMOJI['paw']} Нажмите кнопку в меню выше или отправьте /start", main_inline_keyboard())
         
     except Exception as e:
-        print(f"CRITICAL ERROR in webhook: {e}")
+        print(f"CRITICAL ERROR in webhook: {e}", flush=True)
         import traceback
         traceback.print_exc()
     
-    print("=" * 50)
+    print("=" * 50, flush=True)
     return 'ok'
 
 def handle_callback(callback):
@@ -486,11 +481,10 @@ def handle_callback(callback):
     first_name = callback['from'].get('first_name', 'сотрудник')
     user = f'@{username}' if username else first_name
     
-    print(f"Callback from {user}: data={data}")
+    print(f"Callback from {user}: data={data}", flush=True)
     
     answer_callback(callback['id'])
     
-    # Главное меню
     if data == 'new_record':
         user_states[chat_id] = {
             'step': 0,
@@ -522,13 +516,11 @@ def handle_callback(callback):
         send_message(chat_id, f"{EMOJI['paw']} Ветеринарная клиника\n\n{EMOJI['phone']} +7 (XXX) XXX-XX-XX\n{EMOJI['clock']} Пн-Пт: 9:00-18:00\n{EMOJI['clock']} Сб: 9:00-14:00")
         return 'ok'
     
-    # Отмена
     if data == 'cancel':
         user_states.pop(chat_id, None)
         send_message(chat_id, f"{EMOJI['ok']} Ок, отменено.\n\nЧто дальше?", main_inline_keyboard())
         return 'ok'
     
-    # Обработка шагов опроса
     if chat_id in user_states and 'step' in user_states[chat_id]:
         state = user_states[chat_id]
         step_idx = state['step']
@@ -572,7 +564,6 @@ def handle_callback(callback):
                     state['data'][step['key']] = channel_map[data]
                     state['step'] += 1
             
-            # Следующий шаг или завершение
             if state['step'] >= len(STEPS):
                 return finish_record(chat_id, state)
             else:
@@ -586,7 +577,6 @@ def handle_input(chat_id, text, user):
     """Обработка текстового ввода"""
     state = user_states[chat_id]
     
-    # Проверяем специальные режимы ввода
     if state.get('waiting_for') == 'other_animal':
         state['data']['animal_type'] = text
         state.pop('waiting_for')
@@ -621,7 +611,6 @@ def handle_input(chat_id, text, user):
     step = STEPS[step_idx]
     value = text
     
-    # Валидации
     if step['key'] == 'telegram' and text == '-':
         value = ''
     
@@ -644,11 +633,9 @@ def handle_input(chat_id, text, user):
             send_message(chat_id, f"{EMOJI['warning']} Введите число от 1 до 120")
             return 'ok'
     
-    # Сохраняем
     state['data'][step['key']] = value
     state['step'] += 1
     
-    # Завершение или следующий вопрос
     if state['step'] >= len(STEPS):
         return finish_record(chat_id, state)
     else:
@@ -679,7 +666,7 @@ def answer_callback(callback_id):
     try:
         requests.post(url, json={'callback_query_id': callback_id}, timeout=5)
     except Exception as e:
-        print(f"Error answering callback: {e}")
+        print(f"Error answering callback: {e}", flush=True)
 
 # ============ WEBHOOK SETUP ============
 def set_webhook():
@@ -700,11 +687,11 @@ def set_webhook():
     try:
         response = requests.post(api_url, json=payload, timeout=10)
         result = response.json()
-        print(f"✅ Webhook set: {webhook_url}")
-        print(f"Response: {result}")
+        print(f"✅ Webhook set: {webhook_url}", flush=True)
+        print(f"Response: {result}", flush=True)
         return result.get('ok', False)
     except Exception as e:
-        print(f"❌ Error setting webhook: {e}")
+        print(f"❌ Error setting webhook: {e}", flush=True)
         return False
 
 @app.route('/')
@@ -712,7 +699,6 @@ def health():
     return f"{EMOJI['logo']} БДПЖ Боровск - Бот работает!"
 
 if __name__ == '__main__':
-    # Устанавливаем вебхук перед запуском сервера
     set_webhook()
     
     port = int(os.environ.get('PORT', 10000))
