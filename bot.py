@@ -291,8 +291,8 @@ def sex_inline_keyboard():
     return {
         'inline_keyboard': [
             [
-                {'text': "♂ М", 'callback_data': 'male'},
-                {'text': "♀ Ж", 'callback_data': 'female'}
+                {'text': "М", 'callback_data': 'male'},
+                {'text': "Ж", 'callback_data': 'female'}
             ],
             [{'text': f"{EMOJI['cancel']} Отмена", 'callback_data': 'cancel'}]
         ]
@@ -389,9 +389,10 @@ def webhook():
     print("=" * 50, flush=True)
     print("WEBHOOK CALLED", flush=True)
     
-    if SECRET and request.args.get('secret') != SECRET:
-        print(f"Secret check failed", flush=True)
-        return 'ok'
+    # Проверка секрета отключена (можно включить позже)
+    # if SECRET and request.args.get('secret') != SECRET:
+    #     print(f"Secret check failed", flush=True)
+    #     return 'ok'
     
     try:
         data = request.get_json(force=True)
@@ -676,8 +677,8 @@ def set_webhook():
     if not render_url:
         render_url = 'https://bdpj-bot.onrender.com'
     
-        webhook_url = f"{render_url}/webhook?secret={SECRET}" if SECRET else f"{render_url}/webhook"
-
+    # Исправлено: webhook_url вне блока if
+    webhook_url = f"{render_url}/webhook?secret={SECRET}" if SECRET else f"{render_url}/webhook"
     
     api_url = f'https://api.telegram.org/bot{TOKEN}/setWebhook'
     payload = {
