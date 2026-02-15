@@ -695,6 +695,7 @@ def set_webhook():
         print(f"❌ Error setting webhook: {e}")
         return False
 
+@app.route('/')
 def health():
     return f"{EMOJI['logo']} БДПЖ Боровск - Бот работает!"
 
@@ -704,4 +705,3 @@ if __name__ == '__main__':
     
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
-
