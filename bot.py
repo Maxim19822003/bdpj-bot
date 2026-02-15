@@ -676,7 +676,8 @@ def set_webhook():
     if not render_url:
         render_url = 'https://bdpj-bot.onrender.com'
     
-    webhook_url = f"{render_url}/webhook"
+        webhook_url = f"{render_url}/webhook?secret={SECRET}" if SECRET else f"{render_url}/webhook"
+
     
     api_url = f'https://api.telegram.org/bot{TOKEN}/setWebhook'
     payload = {
@@ -703,3 +704,4 @@ if __name__ == '__main__':
     
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
+
