@@ -2,7 +2,7 @@ import os
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -48,6 +48,245 @@ EMOJI = {
     'clock': '🕐',
     'location': '📍'
 }
+
+# ============ ВАЛИДАТОРЫ ДАННЫХ ============
+class DataValidator:
+    """Класс для валидации всех входных данных"""
+    
+    @staticmethod
+    def clean_text(text):
+        """Очистка текста от лишних пробелов и спецсимволов"""
+        if not text:
+            return ''
+        # Убираем лишние пробелы, табы, переносы строк
+        text = ' '.join(text.split())
+        # Убираем опасные символы для Excel/Sheets
+        text = text.replace('=', '').replace('+', '').replace('-', ' ').replace("'", "")
+        return text.strip()
+    
+    @staticmethod
+    def validate_fio(fio):
+        """Валидация ФИО"""
+        fio = DataValidator.clean_text(fio)
+        if not fio:
+            return None, "ФИО не может быть пустым"
+        
+        # Убираем цифры и спецсимволы
+        fio = re.sub(r'[^а-яА-ЯёЁa-zA-Z\s\-\.]', '', fio)
+        
+        # Проверяем минимальную длину
+        if len(fio) < 3:
+            return None, "ФИО слишком короткое (минимум 3 символа)"
+        
+        # Проверяем что есть хотя бы одна буква
+        if not re.search(r'[а-яА-ЯёЁa-zA-Z]', fio):
+            return None, "В ФИО должны быть буквы"
+        
+        # Нормализуем регистр (первая буква заглавная)
+        parts = fio.split()
+        normalized_parts = []
+        for part in parts:
+            if part:
+                # Обработка двойных фамилий (Иванов-Петров)
+                if '-' in part:
+                    subparts = part.split('-')
+                    normalized_parts.append('-'.join(p.capitalize() for p in subparts))
+                else:
+                    normalized_parts.append(part.capitalize())
+        
+        return ' '.join(normalized_parts), None
+    
+    @staticmethod
+    def validate_phone(phone):
+        """Валидация телефона - принимает любой формат, возвращает +7XXXXXXXXXX"""
+        if not phone:
+            return None, "Телефон не может быть пустым"
+        
+        # Убираем всё кроме цифр
+        digits = re.sub(r'\D', '', phone)
+        
+        # Если пусто
+        if not digits:
+            return None, "В телефоне нет цифр"
+        
+        # Если начинается с 8 и 11 цифр → меняем на 7
+        if digits.startswith('8') and len(digits) == 11:
+            digits = '7' + digits[1:]
+        # Если 10 цифр → добавляем 7
+        elif len(digits) == 10:
+            digits = '7' + digits
+        # Если начинается с 9 и 11 цифр (ошибка) → меняем на 7
+        elif digits.startswith('9') and len(digits) == 11:
+            digits = '7' + digits[1:]
+        
+        # Проверяем что получилось 11 цифр и начинается с 7
+        if len(digits) != 11:
+            return None, f"Неверное количество цифр ({len(digits)}, нужно 11)"
+        
+        if not digits.startswith('7'):
+            return None, "Номер должен начинаться с 7 или 8"
+        
+        # Проверяем код оператора (не 7**0000000)
+        if digits[1:4] == '000':
+            return None, "Неверный код оператора"
+        
+        return '+' + digits, None
+    
+    @staticmethod
+    def validate_telegram(username):
+        """Валидация Telegram username"""
+        if not username or username.strip() in ['-', 'нет', 'не', 'no', '0']:
+            return '', None  # Необязательное поле
+        
+        username = username.strip()
+        
+        # Если это число (chat_id)
+        if username.isdigit():
+            return username, None
+        
+        # Убираем @ если есть
+        if username.startswith('@'):
+            username = username[1:]
+        
+        # Проверяем формат username
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]{4,31}$', username):
+            return None, "Неверный формат. Примеры: @username или 123456789"
+        
+        return username, None
+    
+    @staticmethod
+    def validate_address(address):
+        """Валидация адреса"""
+        address = DataValidator.clean_text(address)
+        if not address:
+            return None, "Адрес не может быть пустым"
+        
+        if len(address) < 5:
+            return None, "Адрес слишком короткий"
+        
+        # Проверяем что есть хотя бы одна цифра (номер дома)
+        if not re.search(r'\d', address):
+            return None, "В адресе должен быть номер дома"
+        
+        return address, None
+    
+    @staticmethod
+    def validate_nickname(nickname):
+        """Валидация клички питомца"""
+        nickname = DataValidator.clean_text(nickname)
+        if not nickname:
+            return None, "Кличка не может быть пустой"
+        
+        # Убираем цифры в начале
+        nickname = re.sub(r'^\d+', '', nickname).strip()
+        
+        if len(nickname) < 2:
+            return None, "Кличка слишком короткая (минимум 2 буквы)"
+        
+        # Первая буква заглавная
+        return nickname.capitalize(), None
+    
+    @staticmethod
+    def validate_age(age):
+        """Валидация возраста или даты рождения"""
+        age = DataValidator.clean_text(age)
+        if not age:
+            return None, "Возраст не может быть пустым"
+        
+        # Пробуем распарсить как дату
+        date_patterns = [
+            r'(\d{1,2})[./\-](\d{1,2})[./\-](\d{2,4})',  # ДД.ММ.ГГГГ или ДД/ММ/ГГ
+            r'(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})',     # ГГГГ.ММ.ДД
+        ]
+        
+        for pattern in date_patterns:
+            match = re.search(pattern, age)
+            if match:
+                try:
+                    groups = match.groups()
+                    if len(groups[2]) == 2:  # ДД.ММ.ГГ
+                        day, month, year = int(groups[0]), int(groups[1]), int(groups[2])
+                        year += 2000 if year < 50 else 1900
+                    elif int(groups[0]) > 31:  # ГГГГ.ММ.ДД
+                        year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
+                    else:
+                        day, month, year = int(groups[0]), int(groups[1]), int(groups[2])
+                    
+                    # Проверяем корректность даты
+                    birth_date = datetime(year, month, day)
+                    if birth_date > datetime.now():
+                        return None, "Дата рождения не может быть в будущем"
+                    if birth_date < datetime(1990, 1, 1):
+                        return None, "Слишком старая дата (до 1990)"
+                    
+                    return f"{day:02d}.{month:02d}.{year}", None
+                except ValueError:
+                    pass
+        
+        # Если не дата, проверяем как текст возраста
+        # Ищем числа
+        numbers = re.findall(r'\d+', age)
+        if numbers:
+            num = int(numbers[0])
+            if num > 50:
+                return None, "Слишком большой возраст (максимум 50 лет)"
+            if num == 0:
+                return None, "Возраст не может быть 0"
+        
+        # Нормализуем текст
+        age = re.sub(r'[^а-яА-ЯёЁa-zA-Z0-9\s]', '', age)
+        return age.lower().strip(), None
+    
+    @staticmethod
+    def validate_vaccine_date(date_str):
+        """Валидация даты прививки"""
+        date_str = DataValidator.clean_text(date_str).lower()
+        
+        if date_str in ['сегодня', 'today', 'сейчас']:
+            return datetime.now().strftime('%Y-%m-%d'), None
+        
+        # Пробуем разные форматы
+        formats = ['%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m.%d.%Y']
+        
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                # Проверяем что дата не в будущем
+                if dt > datetime.now() + timedelta(days=1):
+                    return None, "Дата прививки не может быть в будущем"
+                # Проверяем что не слишком старая
+                if dt < datetime.now() - timedelta(days=365*5):
+                    return None, "Слишком старая дата прививки (более 5 лет назад)"
+                return dt.strftime('%Y-%m-%d'), None
+            except ValueError:
+                continue
+        
+        return None, "Неверный формат даты. Примеры: 15.02.2025, 2025-02-15, сегодня"
+    
+    @staticmethod
+    def validate_term_months(term):
+        """Валидация срока действия в месяцах"""
+        term = DataValidator.clean_text(term)
+        
+        # Заменяем запятую на точку
+        term = term.replace(',', '.')
+        
+        # Ищем число
+        match = re.search(r'(\d+\.?\d*)', term)
+        if not match:
+            return None, "Введите число месяцев"
+        
+        try:
+            num = float(match.group(1))
+            if num <= 0:
+                return None, "Срок должен быть больше 0"
+            if num > 120:
+                return None, "Срок слишком большой (максимум 120 месяцев = 10 лет)"
+            
+            # Округляем до целого
+            return str(int(num)), None
+        except ValueError:
+            return None, "Неверное число"
 
 # ============ GOOGLE SHEETS ============
 def get_client():
@@ -328,19 +567,19 @@ def vaccine_type_inline_keyboard():
 
 # ============ ДАННЫЕ ОПРОСА ============
 STEPS = [
-    {'key': 'fio', 'ask': f"{EMOJI['user']} ФИО владельца\n\nВведите полностью фамилию, имя и отчество", 'kb': None},
-    {'key': 'phone', 'ask': f"{EMOJI['phone']} Телефон\n\nНапример:\n• +79001234567\n• 89001234567", 'kb': None},
-    {'key': 'telegram', 'ask': f"{EMOJI['paw']} Telegram (необязательно)\n\nВведите @username или напишите «-» если нет", 'kb': None},
-    {'key': 'address', 'ask': f"{EMOJI['home']} Адрес\n\nГде проживаете?\nГород, улица, дом, квартира", 'kb': None},
-    {'key': 'consent', 'ask': f"{EMOJI['bell']} Согласие на уведомления\n\nМожем ли мы присылать напоминания о прививках?", 'kb': 'yes_no'},
-    {'key': 'animal_type', 'ask': f"{EMOJI['paw']} Вид животного", 'kb': 'animal'},
-    {'key': 'nickname', 'ask': f"{EMOJI['heart']} Кличка питомца", 'kb': None},
-    {'key': 'sex', 'ask': "Пол", 'kb': 'sex'},
-    {'key': 'age_or_dob', 'ask': f"{EMOJI['calendar']} Возраст или дата рождения\n\nПримеры:\n• 3 года\n• 2020-05-15", 'kb': None},
-    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} Тип прививки", 'kb': 'vaccine'},
-    {'key': 'vaccine_date', 'ask': f"{EMOJI['calendar']} Дата прививки\n\n• Сегодня\n• 2025-02-13", 'kb': None},
-    {'key': 'term_months', 'ask': f"Срок действия (месяцев)\n\n• 12 — бешенство\n• 36 — комплексная", 'kb': None},
-    {'key': 'channel', 'ask': f"{EMOJI['bell']} Канал напоминаний", 'kb': 'channel'},
+    {'key': 'fio', 'ask': f"{EMOJI['user']} ФИО владельца\n\nВведите полностью фамилию, имя и отчество", 'kb': None, 'validate': 'fio'},
+    {'key': 'phone', 'ask': f"{EMOJI['phone']} Телефон\n\nНапример:\n• +79001234567\n• 89001234567\n• 7-900-123-45-67", 'kb': None, 'validate': 'phone'},
+    {'key': 'telegram', 'ask': f"{EMOJI['paw']} Telegram (необязательно)\n\nВведите @username или напишите «-» если нет", 'kb': None, 'validate': 'telegram'},
+    {'key': 'address', 'ask': f"{EMOJI['home']} Адрес\n\nГде проживаете?\nГород, улица, дом, квартира", 'kb': None, 'validate': 'address'},
+    {'key': 'consent', 'ask': f"{EMOJI['bell']} Согласие на уведомления\n\nМожем ли мы присылать напоминания о прививках?", 'kb': 'yes_no', 'validate': None},
+    {'key': 'animal_type', 'ask': f"{EMOJI['paw']} Вид животного", 'kb': 'animal', 'validate': None},
+    {'key': 'nickname', 'ask': f"{EMOJI['heart']} Кличка питомца", 'kb': None, 'validate': 'nickname'},
+    {'key': 'sex', 'ask': "Пол", 'kb': 'sex', 'validate': None},
+    {'key': 'age_or_dob', 'ask': f"{EMOJI['calendar']} Возраст или дата рождения\n\nПримеры:\n• 3 года\n• 2.5 месяца\n• 15.05.2020\n• 2020-05-15", 'kb': None, 'validate': 'age'},
+    {'key': 'vaccine_type', 'ask': f"{EMOJI['syringe']} Тип прививки", 'kb': 'vaccine', 'validate': None},
+    {'key': 'vaccine_date', 'ask': f"{EMOJI['calendar']} Дата прививки\n\n• Сегодня\n• 15.02.2025\n• 2025-02-15", 'kb': None, 'validate': 'vaccine_date'},
+    {'key': 'term_months', 'ask': f"Срок действия (месяцев)\n\n• 12 — бешенство\n• 36 — комплексная\n• Можно дробные: 6, 12, 18", 'kb': None, 'validate': 'term_months'},
+    {'key': 'channel', 'ask': f"{EMOJI['bell']} Канал напоминаний", 'kb': 'channel', 'validate': None},
 ]
 
 user_states = {}
@@ -582,11 +821,17 @@ def handle_callback(callback):
     return 'ok'
 
 def handle_input(chat_id, text, user):
-    """Обработка текстового ввода"""
+    """Обработка текстового ввода с валидацией"""
     state = user_states[chat_id]
+    validator = DataValidator()
     
+    # Обработка специальных ожиданий (другой вид/прививка)
     if state.get('waiting_for') == 'other_animal':
-        state['data']['animal_type'] = text
+        animal_type = validator.clean_text(text)
+        if len(animal_type) < 2:
+            send_message(chat_id, f"{EMOJI['warning']} Слишком коротко. Введите вид животного полностью.")
+            return 'ok'
+        state['data']['animal_type'] = animal_type.capitalize()
         state.pop('waiting_for')
         state['step'] += 1
         
@@ -599,7 +844,11 @@ def handle_input(chat_id, text, user):
         return 'ok'
     
     if state.get('waiting_for') == 'other_vaccine':
-        state['data']['vaccine_type'] = text
+        vaccine_type = validator.clean_text(text)
+        if len(vaccine_type) < 2:
+            send_message(chat_id, f"{EMOJI['warning']} Слишком коротко. Введите тип прививки полностью.")
+            return 'ok'
+        state['data']['vaccine_type'] = vaccine_type.capitalize()
         state.pop('waiting_for')
         state['step'] += 1
         
@@ -617,30 +866,37 @@ def handle_input(chat_id, text, user):
         return 'ok'
     
     step = STEPS[step_idx]
-    value = text
+    validate_type = step.get('validate')
     
-    if step['key'] == 'telegram' and text == '-':
-        value = ''
+    # Валидация данных
+    value = None
+    error = None
     
-    if step['key'] == 'vaccine_date' and text.lower() == 'сегодня':
-        value = datetime.now().strftime('%Y-%m-%d')
+    if validate_type == 'fio':
+        value, error = validator.validate_fio(text)
+    elif validate_type == 'phone':
+        value, error = validator.validate_phone(text)
+    elif validate_type == 'telegram':
+        value, error = validator.validate_telegram(text)
+    elif validate_type == 'address':
+        value, error = validator.validate_address(text)
+    elif validate_type == 'nickname':
+        value, error = validator.validate_nickname(text)
+    elif validate_type == 'age':
+        value, error = validator.validate_age(text)
+    elif validate_type == 'vaccine_date':
+        value, error = validator.validate_vaccine_date(text)
+    elif validate_type == 'term_months':
+        value, error = validator.validate_term_months(text)
+    else:
+        value = validator.clean_text(text)
     
-    if step['key'] == 'phone':
-        value = text.replace(' ', '').replace('-', '')
-        if not value.replace('+', '').isdigit() or len(value.replace('+', '')) < 10:
-            send_message(chat_id, f"{EMOJI['warning']} Неверный формат.\nПример: +79001234567")
-            return 'ok'
+    # Если есть ошибка валидации
+    if error:
+        send_message(chat_id, f"{EMOJI['warning']} {error}\n\nПопробуйте ещё раз:")
+        return 'ok'
     
-    if step['key'] == 'term_months':
-        try:
-            n = float(text.replace(',', '.'))
-            if n <= 0 or n > 120:
-                raise ValueError
-            value = str(int(n))
-        except:
-            send_message(chat_id, f"{EMOJI['warning']} Введите число от 1 до 120")
-            return 'ok'
-    
+    # Сохраняем валидированное значение
     state['data'][step['key']] = value
     state['step'] += 1
     
