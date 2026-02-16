@@ -653,16 +653,51 @@ def handle_input(chat_id, text, user):
     
     return 'ok'
 
+def format_fio_short(fio):
+    """Преобразует ФИО в формат: Фамилия И.О. (с инициалами)"""
+    if not fio or fio == 'Не указано':
+        return fio
+    
+    # Убираем лишние пробелы
+    fio = ' '.join(fio.split())
+    parts = fio.split()
+    
+    if len(parts) == 1:
+        # Только фамилия
+        return parts[0]
+    elif len(parts) == 2:
+        # Фамилия Имя → Иванов В.
+        return f"{parts[0]} {parts[1][0]}."
+    elif len(parts) >= 3:
+        # Фамилия Имя Отчество → Иванов В.А.
+        return f"{parts[0]} {parts[1][0]}.{parts[2][0]}."
+    
+    return fio
+
 def finish_record(chat_id, state):
     """Завершение записи"""
     if save_to_sheet(state['data']):
+        # Получаем данные для форматирования
+        fio_raw = state['data'].get('fio', 'Не указано')
+        fio = format_fio_short(fio_raw)
+        
+        nickname = state['data'].get('nickname', 'Не указано')
+        animal_type = state['data'].get('animal_type', '')
+        vaccine_type = state['data'].get('vaccine_type', 'Не указано')
+        term_months = state['data'].get('term_months', '')
+        
+        # Формируем строку с питомцем: "Вид Кличка" или просто "Кличка"
+        pet_full = f"{animal_type} {nickname}" if animal_type else nickname
+        
         success_text = f"""{EMOJI['ok']} Записано!
 
-Питомец: {state['data'].get('nickname', '')}
-Прививка: {state['data'].get('vaccine_type', '')}
-Срок: {state['data'].get('term_months', '')} мес.
+Владелец: {fio}
+Питомец: {pet_full}
+Прививка: {vaccine_type}
+Срок: {term_months} мес.
 
 {EMOJI['bell']} Напоминание придёт за 3 дня до окончания срока."""
+        
         send_message(chat_id, success_text, main_inline_keyboard())
     else:
         send_message(chat_id, f"{EMOJI['cross']} Ошибка записи. Попробуйте позже.", main_inline_keyboard())
@@ -711,3 +746,4 @@ if __name__ == '__main__':
     
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
+
